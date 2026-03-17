@@ -125,9 +125,6 @@ func TestViewServersTab(t *testing.T) {
 	if !strings.Contains(view, "Projects") {
 		t.Errorf("expected view to contain 'Projects' tab label, got:\n%s", view)
 	}
-	if !strings.Contains(view, "Step 9") {
-		t.Errorf("expected servers placeholder content, got:\n%s", view)
-	}
 }
 
 func TestViewProjectsTab(t *testing.T) {
@@ -171,5 +168,29 @@ func TestViewBeforeWindowSize(t *testing.T) {
 	view := app.View()
 	if !strings.Contains(view, "Loading") {
 		t.Errorf("expected 'Loading...' before window size, got:\n%s", view)
+	}
+}
+
+func TestStatusBarServersTab(t *testing.T) {
+	app := NewApp(nil)
+	m, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
+	app = m.(AppModel)
+
+	view := app.View()
+	if !strings.Contains(view, "d: delete") {
+		t.Errorf("expected servers status help in status bar, got:\n%s", view)
+	}
+}
+
+func TestWindowSizePropagation(t *testing.T) {
+	app := NewApp(nil)
+	m, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	app = m.(AppModel)
+
+	if app.servers.width != 100 {
+		t.Errorf("expected servers width 100, got %d", app.servers.width)
+	}
+	if app.servers.height == 0 {
+		t.Errorf("expected servers height > 0, got %d", app.servers.height)
 	}
 }

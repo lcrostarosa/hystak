@@ -40,6 +40,8 @@ type AppModel struct {
 	width     int
 	height    int
 	err       error
+
+	servers ServersModel
 }
 
 // NewApp creates a new TUI application model.
@@ -49,6 +51,7 @@ func NewApp(svc *service.Service) AppModel {
 		activeTab: ServersTab,
 		mode:      ModeBrowse,
 		keys:      newKeyMap(),
+		servers:   NewServersModel(svc),
 	}
 }
 
@@ -63,6 +66,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
+		m.updateContentSize()
 		return m, nil
 
 	case tea.KeyMsg:
@@ -74,21 +78,64 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 
-		switch {
-		case key.Matches(msg, m.keys.Quit):
-			return m, tea.Quit
+		// If the active tab is consuming input (filtering, confirming),
+		// skip global key handling and route directly to the tab.
+		if !m.activeTabConsuming() {
+			switch {
+			case key.Matches(msg, m.keys.Quit):
+				return m, tea.Quit
 
-		case key.Matches(msg, m.keys.TabNext):
-			m.activeTab = (m.activeTab + 1) % tabCount
-			return m, nil
+			case key.Matches(msg, m.keys.TabNext):
+				m.activeTab = (m.activeTab + 1) % tabCount
+				return m, nil
 
-		case key.Matches(msg, m.keys.TabPrev):
-			m.activeTab = (m.activeTab - 1 + tabCount) % tabCount
-			return m, nil
+			case key.Matches(msg, m.keys.TabPrev):
+				m.activeTab = (m.activeTab - 1 + tabCount) % tabCount
+				return m, nil
+			}
 		}
 	}
 
+	// Route remaining messages to the active tab.
+	return m.updateActiveTab(msg)
+}
+
+// activeTabConsuming returns true if the active tab is handling its own input.
+func (m AppModel) activeTabConsuming() bool {
+	switch m.activeTab {
+	case ServersTab:
+		return m.servers.IsConsuming()
+	}
+	return false
+}
+
+// updateActiveTab forwards a message to the currently active tab.
+func (m AppModel) updateActiveTab(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch m.activeTab {
+	case ServersTab:
+		var cmd tea.Cmd
+		m.servers, cmd = m.servers.Update(msg)
+		return m, cmd
+	}
 	return m, nil
+}
+
+// updateContentSize recalculates and propagates dimensions to sub-models.
+func (m *AppModel) updateContentSize() {
+	contentHeight := m.contentHeight()
+	m.servers.SetSize(m.width, contentHeight)
+}
+
+// contentHeight returns the height available for tab content.
+func (m AppModel) contentHeight() int {
+	// Tab bar is 1 line + border = 2 lines, status bar is 1 line.
+	// contentStyle has padding(1,2) = 2 vertical lines.
+	overhead := 2 + 1 + 2
+	h := m.height - overhead
+	if h < 0 {
+		h = 0
+	}
+	return h
 }
 
 // View implements tea.Model.
@@ -102,7 +149,7 @@ func (m AppModel) View() string {
 	var content string
 	switch m.activeTab {
 	case ServersTab:
-		content = m.renderServersPlaceholder()
+		content = m.servers.View()
 	case ProjectsTab:
 		content = m.renderProjectsPlaceholder()
 	}
@@ -143,12 +190,14 @@ func (m AppModel) renderTabBar() string {
 }
 
 func (m AppModel) renderStatusBar() string {
-	help := "tab: switch tabs | q: quit"
+	var help string
+	switch m.activeTab {
+	case ServersTab:
+		help = m.servers.StatusHelp()
+	default:
+		help = "tab: switch tabs | q: quit"
+	}
 	return statusBarStyle.Render(help)
-}
-
-func (m AppModel) renderServersPlaceholder() string {
-	return "Servers tab — content coming in Step 9"
 }
 
 func (m AppModel) renderProjectsPlaceholder() string {
