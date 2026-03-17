@@ -4,8 +4,11 @@ import (
 	"fmt"
 	"os"
 
+	tea "github.com/charmbracelet/bubbletea"
+	"github.com/mattn/go-isatty"
 	"github.com/rbbydotdev/hystak/internal/config"
 	"github.com/rbbydotdev/hystak/internal/service"
+	"github.com/rbbydotdev/hystak/internal/tui"
 	"github.com/spf13/cobra"
 )
 
@@ -35,8 +38,13 @@ func newRootCmd(version, commit, date string) *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintln(cmd.OutOrStdout(), "TUI coming soon")
-			return nil
+			if !isatty.IsTerminal(os.Stdout.Fd()) && !isatty.IsCygwinTerminal(os.Stdout.Fd()) {
+				return cmd.Help()
+			}
+			app := tui.NewApp(svc)
+			p := tea.NewProgram(app, tea.WithAltScreen())
+			_, err := p.Run()
+			return err
 		},
 		SilenceUsage: true,
 	}

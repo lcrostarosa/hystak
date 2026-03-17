@@ -204,13 +204,14 @@ func TestOverrideCommandNoFlags(t *testing.T) {
 	}
 }
 
-func TestRootCommandTUIPlaceholder(t *testing.T) {
+func TestRootCommandNonTTY(t *testing.T) {
 	dir := setupTestConfig(t)
+	// When stdout is not a TTY (as in tests), root command should show help.
 	out, err := runCommand(t, dir)
 	if err != nil {
 		t.Fatalf("root command failed: %v", err)
 	}
-	if !strings.Contains(out, "TUI coming soon") {
-		t.Errorf("expected TUI placeholder message, got:\n%s", out)
+	if !strings.Contains(out, "hystak") {
+		t.Errorf("expected help output to contain 'hystak', got:\n%s", out)
 	}
 }
