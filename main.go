@@ -1,6 +1,6 @@
 package main
 
-import "fmt"
+import "github.com/rbbydotdev/hystak/internal/cli"
 
 var (
 	version = "dev"
@@ -9,5 +9,5 @@ var (
 )
 
 func main() {
-	fmt.Println("hystak")
+	cli.Execute(version, commit, date)
 }
