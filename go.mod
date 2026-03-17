@@ -1,4 +1,4 @@
-module github.com/rbbydotdev/hystak
+module github.com/lcrostarosa/hystak
 
 go 1.25.6
 

@@ -6,9 +6,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-isatty"
-	"github.com/rbbydotdev/hystak/internal/config"
-	"github.com/rbbydotdev/hystak/internal/service"
-	"github.com/rbbydotdev/hystak/internal/tui"
+	"github.com/lcrostarosa/hystak/internal/config"
+	"github.com/lcrostarosa/hystak/internal/service"
+	"github.com/lcrostarosa/hystak/internal/tui"
 	"github.com/spf13/cobra"
 )
 

@@ -6,7 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/rbbydotdev/hystak/internal/service"
+	"github.com/lcrostarosa/hystak/internal/service"
 )
 
 // Tab identifies which tab is active.
@@ -41,7 +41,8 @@ type AppModel struct {
 	height    int
 	err       error
 
-	servers ServersModel
+	servers  ServersModel
+	projects ProjectsModel
 }
 
 // NewApp creates a new TUI application model.
@@ -51,7 +52,8 @@ func NewApp(svc *service.Service) AppModel {
 		activeTab: ServersTab,
 		mode:      ModeBrowse,
 		keys:      newKeyMap(),
-		servers:   NewServersModel(svc),
+		servers:  NewServersModel(svc),
+		projects: NewProjectsModel(svc),
 	}
 }
 
@@ -105,6 +107,8 @@ func (m AppModel) activeTabConsuming() bool {
 	switch m.activeTab {
 	case ServersTab:
 		return m.servers.IsConsuming()
+	case ProjectsTab:
+		return m.projects.IsConsuming()
 	}
 	return false
 }
@@ -116,6 +120,10 @@ func (m AppModel) updateActiveTab(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.servers, cmd = m.servers.Update(msg)
 		return m, cmd
+	case ProjectsTab:
+		var cmd tea.Cmd
+		m.projects, cmd = m.projects.Update(msg)
+		return m, cmd
 	}
 	return m, nil
 }
@@ -124,6 +132,7 @@ func (m AppModel) updateActiveTab(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m *AppModel) updateContentSize() {
 	contentHeight := m.contentHeight()
 	m.servers.SetSize(m.width, contentHeight)
+	m.projects.SetSize(m.width, contentHeight)
 }
 
 // contentHeight returns the height available for tab content.
@@ -151,7 +160,7 @@ func (m AppModel) View() string {
 	case ServersTab:
 		content = m.servers.View()
 	case ProjectsTab:
-		content = m.renderProjectsPlaceholder()
+		content = m.projects.View()
 	}
 
 	statusBar := m.renderStatusBar()
@@ -194,14 +203,12 @@ func (m AppModel) renderStatusBar() string {
 	switch m.activeTab {
 	case ServersTab:
 		help = m.servers.StatusHelp()
+	case ProjectsTab:
+		help = m.projects.StatusHelp()
 	default:
 		help = "tab: switch tabs | q: quit"
 	}
 	return statusBarStyle.Render(help)
-}
-
-func (m AppModel) renderProjectsPlaceholder() string {
-	return "Projects tab — content coming in Step 10"
 }
 
 func max(a, b int) int {

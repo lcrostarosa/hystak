@@ -3,7 +3,7 @@ package deploy
 import (
 	"fmt"
 
-	"github.com/rbbydotdev/hystak/internal/model"
+	"github.com/lcrostarosa/hystak/internal/model"
 )
 
 // ClaudeDesktopDeployer is a stub deployer for Claude Desktop.

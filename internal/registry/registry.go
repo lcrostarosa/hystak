@@ -5,7 +5,7 @@ import (
 	"os"
 	"sort"
 
-	"github.com/rbbydotdev/hystak/internal/model"
+	"github.com/lcrostarosa/hystak/internal/model"
 	"gopkg.in/yaml.v3"
 )
 

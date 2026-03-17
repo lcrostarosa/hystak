@@ -1,6 +1,6 @@
 package main
 
-import "github.com/rbbydotdev/hystak/internal/cli"
+import "github.com/lcrostarosa/hystak/internal/cli"
 
 var (
 	version = "dev"

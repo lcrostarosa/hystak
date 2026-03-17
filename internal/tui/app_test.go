@@ -137,8 +137,8 @@ func TestViewProjectsTab(t *testing.T) {
 	app = m.(AppModel)
 
 	view := app.View()
-	if !strings.Contains(view, "Step 10") {
-		t.Errorf("expected projects placeholder content, got:\n%s", view)
+	if !strings.Contains(view, "No project selected") {
+		t.Errorf("expected 'No project selected' on projects tab, got:\n%s", view)
 	}
 }
 
@@ -192,5 +192,11 @@ func TestWindowSizePropagation(t *testing.T) {
 	}
 	if app.servers.height == 0 {
 		t.Errorf("expected servers height > 0, got %d", app.servers.height)
+	}
+	if app.projects.width != 100 {
+		t.Errorf("expected projects width 100, got %d", app.projects.width)
+	}
+	if app.projects.height == 0 {
+		t.Errorf("expected projects height > 0, got %d", app.projects.height)
 	}
 }

@@ -8,8 +8,8 @@ import (
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/rbbydotdev/hystak/internal/model"
-	"github.com/rbbydotdev/hystak/internal/service"
+	"github.com/lcrostarosa/hystak/internal/model"
+	"github.com/lcrostarosa/hystak/internal/service"
 )
 
 // serverItem implements list.DefaultItem for the server list.

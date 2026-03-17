@@ -7,10 +7,10 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/rbbydotdev/hystak/internal/deploy"
-	"github.com/rbbydotdev/hystak/internal/model"
-	"github.com/rbbydotdev/hystak/internal/project"
-	"github.com/rbbydotdev/hystak/internal/registry"
+	"github.com/lcrostarosa/hystak/internal/deploy"
+	"github.com/lcrostarosa/hystak/internal/model"
+	"github.com/lcrostarosa/hystak/internal/project"
+	"github.com/lcrostarosa/hystak/internal/registry"
 )
 
 // SyncAction describes what happened to a server during sync.

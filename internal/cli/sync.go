@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"github.com/rbbydotdev/hystak/internal/service"
+	"github.com/lcrostarosa/hystak/internal/service"
 	"github.com/spf13/cobra"
 )
 

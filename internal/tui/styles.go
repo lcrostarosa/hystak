@@ -44,4 +44,7 @@ var (
 
 	errorStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("196"))
+
+	syncMsgStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("42"))
 )

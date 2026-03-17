@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"text/tabwriter"
 
-	"github.com/rbbydotdev/hystak/internal/model"
+	"github.com/lcrostarosa/hystak/internal/model"
 	"github.com/spf13/cobra"
 )
 

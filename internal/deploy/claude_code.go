@@ -6,7 +6,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/rbbydotdev/hystak/internal/model"
+	"github.com/lcrostarosa/hystak/internal/model"
 )
 
 // ClaudeCodeDeployer reads and writes MCP server configs for Claude Code.

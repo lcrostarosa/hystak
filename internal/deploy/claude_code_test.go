@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/rbbydotdev/hystak/internal/model"
+	"github.com/lcrostarosa/hystak/internal/model"
 )
 
 func TestClaudeCodeDeployer_ClientType(t *testing.T) {

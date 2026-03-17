@@ -3,7 +3,7 @@ package deploy
 import (
 	"fmt"
 
-	"github.com/rbbydotdev/hystak/internal/model"
+	"github.com/lcrostarosa/hystak/internal/model"
 )
 
 // Deployer writes and reads MCP server configs for a specific client.

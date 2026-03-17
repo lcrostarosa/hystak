@@ -5,10 +5,10 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/rbbydotdev/hystak/internal/model"
-	"github.com/rbbydotdev/hystak/internal/project"
-	"github.com/rbbydotdev/hystak/internal/registry"
-	"github.com/rbbydotdev/hystak/internal/service"
+	"github.com/lcrostarosa/hystak/internal/model"
+	"github.com/lcrostarosa/hystak/internal/project"
+	"github.com/lcrostarosa/hystak/internal/registry"
+	"github.com/lcrostarosa/hystak/internal/service"
 )
 
 func testService() *service.Service {
