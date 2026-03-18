@@ -143,7 +143,7 @@ func (m ServersModel) StatusHelp() string {
 	if m.confirming {
 		return "y: confirm delete | n: cancel"
 	}
-	return "a: add | e: edit | d: delete | /: filter | tab: switch tabs | q: quit"
+	return "a: add | e: edit | d: delete | i: import | /: filter | tab: switch tabs | q: quit"
 }
 
 // Update handles messages for the servers tab.
@@ -190,6 +190,8 @@ func (m ServersModel) Update(msg tea.Msg) (ServersModel, tea.Cmd) {
 				m.err = nil
 			}
 			return m, nil
+		case "i":
+			return m, func() tea.Msg { return RequestImportMsg{} }
 		}
 	}
 

@@ -44,6 +44,7 @@ type AppModel struct {
 	servers  ServersModel
 	projects ProjectsModel
 	form     FormModel
+	importer ImportModel
 }
 
 // NewApp creates a new TUI application model.
@@ -72,6 +73,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.updateContentSize()
 		if m.mode == ModeForm {
 			m.form.SetSize(m.width, m.height)
+		}
+		if m.mode == ModeImport {
+			m.importer.SetSize(m.width, m.height)
 		}
 		return m, nil
 
@@ -108,11 +112,33 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = ModeBrowse
 		return m, nil
 
+	case RequestImportMsg:
+		m.importer = NewImportModel(m.service)
+		m.importer.SetSize(m.width, m.height)
+		m.mode = ModeImport
+		return m, nil
+
+	case ImportCompletedMsg:
+		m.mode = ModeBrowse
+		m.servers.refreshList()
+		return m, nil
+
+	case ImportCancelledMsg:
+		m.mode = ModeBrowse
+		return m, nil
+
 	case tea.KeyMsg:
 		// In form mode, route all input to the form.
 		if m.mode == ModeForm {
 			var cmd tea.Cmd
 			m.form, cmd = m.form.Update(msg)
+			return m, cmd
+		}
+
+		// In import mode, route all input to the importer.
+		if m.mode == ModeImport {
+			var cmd tea.Cmd
+			m.importer, cmd = m.importer.Update(msg)
 			return m, cmd
 		}
 
@@ -197,9 +223,12 @@ func (m AppModel) View() string {
 		return "Loading..."
 	}
 
-	// Form overlay takes over the full screen.
+	// Overlay modes take over the full screen.
 	if m.mode == ModeForm {
 		return m.form.View()
+	}
+	if m.mode == ModeImport {
+		return m.importer.View()
 	}
 
 	tabBar := m.renderTabBar()
