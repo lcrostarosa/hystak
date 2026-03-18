@@ -75,4 +75,17 @@ var (
 	formHintStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("241")).
 			Italic(true)
+
+	diffAddStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("42"))
+
+	diffDelStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("196"))
+
+	diffHunkStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("45"))
+
+	diffHeaderStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("245"))
 )

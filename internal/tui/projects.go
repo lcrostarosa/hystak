@@ -204,9 +204,9 @@ func (m ProjectsModel) StatusHelp() string {
 		return "y: confirm delete | n: cancel"
 	}
 	if m.focus == focusRight {
-		return "space: toggle | s: sync | esc: back"
+		return "space: toggle | s: sync | D: diff | esc: back"
 	}
-	return "enter: servers | d: delete | s: sync | /: filter | tab: switch tabs | q: quit"
+	return "enter: servers | d: delete | s: sync | D: diff | /: filter | tab: switch tabs | q: quit"
 }
 
 // Update handles messages for the projects tab.
@@ -253,6 +253,11 @@ func (m ProjectsModel) Update(msg tea.Msg) (ProjectsModel, tea.Cmd) {
 			case "s":
 				m.syncSelectedProject()
 				return m, nil
+			case "D":
+				if proj, ok := m.selectedProject(); ok {
+					return m, func() tea.Msg { return RequestDiffMsg{ProjectName: proj.Name} }
+				}
+				return m, nil
 			case "esc", "h":
 				m.focus = focusLeft
 				return m, nil
@@ -282,6 +287,11 @@ func (m ProjectsModel) Update(msg tea.Msg) (ProjectsModel, tea.Cmd) {
 			return m, nil
 		case "s":
 			m.syncSelectedProject()
+			return m, nil
+		case "D":
+			if proj, ok := m.selectedProject(); ok {
+				return m, func() tea.Msg { return RequestDiffMsg{ProjectName: proj.Name} }
+			}
 			return m, nil
 		}
 	}

@@ -45,6 +45,7 @@ type AppModel struct {
 	projects ProjectsModel
 	form     FormModel
 	importer ImportModel
+	diff     DiffModel
 }
 
 // NewApp creates a new TUI application model.
@@ -76,6 +77,9 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if m.mode == ModeImport {
 			m.importer.SetSize(m.width, m.height)
+		}
+		if m.mode == ModeDiff {
+			m.diff.SetSize(m.width, m.height)
 		}
 		return m, nil
 
@@ -127,6 +131,17 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = ModeBrowse
 		return m, nil
 
+	case RequestDiffMsg:
+		m.diff = NewDiffModel(m.service, msg.ProjectName)
+		m.diff.SetSize(m.width, m.height)
+		m.mode = ModeDiff
+		return m, nil
+
+	case DiffClosedMsg:
+		m.mode = ModeBrowse
+		m.projects.refreshList()
+		return m, nil
+
 	case tea.KeyMsg:
 		// In form mode, route all input to the form.
 		if m.mode == ModeForm {
@@ -139,6 +154,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.mode == ModeImport {
 			var cmd tea.Cmd
 			m.importer, cmd = m.importer.Update(msg)
+			return m, cmd
+		}
+
+		// In diff mode, route all input to the diff model.
+		if m.mode == ModeDiff {
+			var cmd tea.Cmd
+			m.diff, cmd = m.diff.Update(msg)
 			return m, cmd
 		}
 
@@ -229,6 +251,9 @@ func (m AppModel) View() string {
 	}
 	if m.mode == ModeImport {
 		return m.importer.View()
+	}
+	if m.mode == ModeDiff {
+		return m.diff.View()
 	}
 
 	tabBar := m.renderTabBar()
