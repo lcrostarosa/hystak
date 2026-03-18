@@ -238,37 +238,7 @@ func (m ServersModel) renderDetail(width, height int) string {
 	}
 
 	b.WriteString("\n")
-	fmt.Fprintf(&b, "%s %s\n", detailLabelStyle.Render("Transport:"), string(srv.Transport))
-
-	if srv.Command != "" {
-		fmt.Fprintf(&b, "%s %s\n", detailLabelStyle.Render("Command:"), srv.Command)
-	}
-
-	if len(srv.Args) > 0 {
-		fmt.Fprintf(&b, "%s %s\n", detailLabelStyle.Render("Args:"), strings.Join(srv.Args, " "))
-	}
-
-	if srv.URL != "" {
-		fmt.Fprintf(&b, "%s %s\n", detailLabelStyle.Render("URL:"), srv.URL)
-	}
-
-	if len(srv.Env) > 0 {
-		b.WriteString("\n")
-		b.WriteString(detailLabelStyle.Render("Environment:"))
-		b.WriteString("\n")
-		for _, k := range sortedKeys(srv.Env) {
-			fmt.Fprintf(&b, "  %s=%s\n", k, srv.Env[k])
-		}
-	}
-
-	if len(srv.Headers) > 0 {
-		b.WriteString("\n")
-		b.WriteString(detailLabelStyle.Render("Headers:"))
-		b.WriteString("\n")
-		for _, k := range sortedKeys(srv.Headers) {
-			fmt.Fprintf(&b, "  %s: %s\n", k, srv.Headers[k])
-		}
-	}
+	writeServerFields(&b, srv, detailLabelStyle)
 
 	if m.confirming {
 		b.WriteString("\n")

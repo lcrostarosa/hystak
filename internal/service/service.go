@@ -50,6 +50,12 @@ type ImportCandidate struct {
 	RenameTo   string
 }
 
+// WasImported returns true if this candidate was actually imported
+// (non-conflicting, or conflict resolved via replace/rename).
+func (c ImportCandidate) WasImported() bool {
+	return !c.Conflict || c.Resolution == ImportReplace || c.Resolution == ImportRename
+}
+
 // Service orchestrates registry, projects, and deployers.
 type Service struct {
 	Registry  *registry.Registry
@@ -153,7 +159,7 @@ func (s *Service) SyncProject(projectName string) ([]SyncResult, error) {
 		for name, srv := range expected {
 			merged[name] = srv
 			if prev, wasDeployed := deployed[name]; wasDeployed {
-				if serversEqual(prev, srv) {
+				if prev.Equal(srv) {
 					results = append(results, SyncResult{
 						ServerName: name,
 						Client:     ct,
@@ -253,7 +259,7 @@ func (s *Service) DriftReport(projectName string) ([]model.ServerDriftReport, er
 				})
 			} else {
 				depCopy := dep
-				if serversEqual(exp, dep) {
+				if exp.Equal(dep) {
 					reports = append(reports, model.ServerDriftReport{
 						ServerName: name,
 						Status:     model.DriftSynced,
@@ -435,55 +441,6 @@ func detectClientType(configPath string) (model.ClientType, string, error) {
 	default:
 		return "", "", fmt.Errorf("cannot determine client type from file %q", configPath)
 	}
-}
-
-// serversEqual performs semantic comparison of two server definitions.
-// Compares transport, command, args, env, url, and headers.
-// Ignores Name and Description (registry-only metadata).
-func serversEqual(a, b model.ServerDef) bool {
-	if a.Transport != b.Transport {
-		return false
-	}
-	if a.Command != b.Command {
-		return false
-	}
-	if a.URL != b.URL {
-		return false
-	}
-	if !sliceEqual(a.Args, b.Args) {
-		return false
-	}
-	if !mapEqual(a.Env, b.Env) {
-		return false
-	}
-	if !mapEqual(a.Headers, b.Headers) {
-		return false
-	}
-	return true
-}
-
-func sliceEqual(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func mapEqual(a, b map[string]string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k, v := range a {
-		if bv, ok := b[k]; !ok || bv != v {
-			return false
-		}
-	}
-	return true
 }
 
 // serversToJSON formats a server map as deterministic pretty-printed JSON for diffing.

@@ -124,13 +124,7 @@ func (m *FormModel) initInputs() {
 func (m *FormModel) SetSize(w, h int) {
 	m.width = w
 	m.height = h
-	inputWidth := w - 10
-	if inputWidth < 30 {
-		inputWidth = 30
-	}
-	if inputWidth > 60 {
-		inputWidth = 60
-	}
+	inputWidth := clamp(w-10, 30, 60)
 	for i := range m.inputs {
 		m.inputs[i].Width = inputWidth
 	}
@@ -176,14 +170,16 @@ func (m *FormModel) prevField() {
 	}
 }
 
+var transports = []model.Transport{
+	model.TransportStdio, model.TransportSSE, model.TransportHTTP,
+}
+
 func (m *FormModel) cycleTransport() {
-	switch m.transport {
-	case model.TransportStdio:
-		m.transport = model.TransportSSE
-	case model.TransportSSE:
-		m.transport = model.TransportHTTP
-	case model.TransportHTTP:
-		m.transport = model.TransportStdio
+	for i, t := range transports {
+		if t == m.transport {
+			m.transport = transports[(i+1)%len(transports)]
+			break
+		}
 	}
 	// Ensure focused field is still visible.
 	visible := m.visibleFields()
@@ -319,38 +315,23 @@ func (m FormModel) View() string {
 	// Help
 	b.WriteString(formHintStyle.Render("tab: next field | shift+tab: prev | enter: save | esc: cancel"))
 
-	formWidth := m.width - 4
-	if formWidth < 40 {
-		formWidth = 40
-	}
-	if formWidth > 70 {
-		formWidth = 70
-	}
+	formWidth := clamp(m.width-4, 40, 70)
 
 	content := formBoxStyle.Width(formWidth).Render(b.String())
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
 }
 
-func fieldLabel(f formField) string {
-	switch f {
-	case fieldName:
-		return "Name"
-	case fieldDescription:
-		return "Description"
-	case fieldCommand:
-		return "Command"
-	case fieldArgs:
-		return "Args (comma-separated)"
-	case fieldEnv:
-		return "Environment (KEY=VALUE, ...)"
-	case fieldURL:
-		return "URL"
-	case fieldHeaders:
-		return "Headers (Key=Value, ...)"
-	default:
-		return ""
-	}
+var fieldLabels = map[formField]string{
+	fieldName:        "Name",
+	fieldDescription: "Description",
+	fieldCommand:     "Command",
+	fieldArgs:        "Args (comma-separated)",
+	fieldEnv:         "Environment (KEY=VALUE, ...)",
+	fieldURL:         "URL",
+	fieldHeaders:     "Headers (Key=Value, ...)",
 }
+
+func fieldLabel(f formField) string { return fieldLabels[f] }
 
 // parseCSV splits a comma-separated string into trimmed, non-empty parts.
 func parseCSV(s string) []string {

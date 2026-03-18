@@ -20,6 +20,12 @@ const (
 	phaseConflict
 )
 
+var cursorResolution = map[int]service.ImportResolution{
+	0: service.ImportKeep,
+	1: service.ImportReplace,
+	2: service.ImportSkip,
+}
+
 // ImportCompletedMsg is sent when the import flow finishes successfully.
 type ImportCompletedMsg struct {
 	Imported int
@@ -71,13 +77,7 @@ func NewImportModel(svc *service.Service) ImportModel {
 func (m *ImportModel) SetSize(w, h int) {
 	m.width = w
 	m.height = h
-	inputWidth := w - 10
-	if inputWidth < 30 {
-		inputWidth = 30
-	}
-	if inputWidth > 70 {
-		inputWidth = 70
-	}
+	inputWidth := clamp(w-10, 30, 70)
 	m.pathInput.Width = inputWidth
 	m.renameInput.Width = inputWidth
 }
@@ -152,14 +152,10 @@ func (m ImportModel) updatePreview(msg tea.KeyMsg) (ImportModel, tea.Cmd) {
 	case "esc":
 		return m, func() tea.Msg { return ImportCancelledMsg{} }
 	case "up", "k":
-		if m.cursor > 0 {
-			m.cursor--
-		}
+		m.cursor = moveCursor(m.cursor, -1, len(m.candidates))
 		return m, nil
 	case "down", "j":
-		if m.cursor < len(m.candidates)-1 {
-			m.cursor++
-		}
+		m.cursor = moveCursor(m.cursor, 1, len(m.candidates))
 		return m, nil
 	case " ":
 		if m.cursor < len(m.selected) {
@@ -208,9 +204,7 @@ func (m ImportModel) updateConflict(msg tea.KeyMsg) (ImportModel, tea.Cmd) {
 	case "esc":
 		return m, func() tea.Msg { return ImportCancelledMsg{} }
 	case "k", "up":
-		if m.cursor > 0 {
-			m.cursor--
-		}
+		m.cursor = moveCursor(m.cursor, -1, 4)
 		return m, nil
 	case "s":
 		m.candidates[m.conflictAt].Resolution = service.ImportSkip
@@ -237,19 +231,12 @@ func (m ImportModel) updateConflict(msg tea.KeyMsg) (ImportModel, tea.Cmd) {
 			return m.advanceConflict()
 		}
 		// Map cursor position to resolution.
-		switch m.cursor {
-		case 0:
-			m.candidates[m.conflictAt].Resolution = service.ImportKeep
-		case 1:
-			m.candidates[m.conflictAt].Resolution = service.ImportReplace
-		case 2:
-			m.candidates[m.conflictAt].Resolution = service.ImportSkip
+		if res, ok := cursorResolution[m.cursor]; ok {
+			m.candidates[m.conflictAt].Resolution = res
 		}
 		return m.advanceConflict()
 	case "down", "j":
-		if m.cursor < 3 {
-			m.cursor++
-		}
+		m.cursor = moveCursor(m.cursor, 1, 4)
 		return m, nil
 	}
 
@@ -293,7 +280,7 @@ func (m ImportModel) finishImport() (ImportModel, tea.Cmd) {
 	}
 	imported := 0
 	for _, c := range m.candidates {
-		if !c.Conflict || c.Resolution == service.ImportReplace || c.Resolution == service.ImportRename {
+		if c.WasImported() {
 			imported++
 		}
 	}
@@ -313,13 +300,7 @@ func (m ImportModel) View() string {
 		m.renderConflict(&b)
 	}
 
-	formWidth := m.width - 4
-	if formWidth < 40 {
-		formWidth = 40
-	}
-	if formWidth > 70 {
-		formWidth = 70
-	}
+	formWidth := clamp(m.width-4, 40, 70)
 
 	content := formBoxStyle.Width(formWidth).Render(b.String())
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
@@ -445,26 +426,7 @@ func formatServerCompact(srv model.ServerDef) string {
 
 // formatServerDetail returns a multi-line detail view of a server.
 func formatServerDetail(srv model.ServerDef) string {
-	var lines []string
-	lines = append(lines, fmt.Sprintf("  Transport: %s", srv.Transport))
-	if srv.Command != "" {
-		lines = append(lines, fmt.Sprintf("  Command:   %s", srv.Command))
-	}
-	if len(srv.Args) > 0 {
-		lines = append(lines, fmt.Sprintf("  Args:      %s", strings.Join(srv.Args, " ")))
-	}
-	if srv.URL != "" {
-		lines = append(lines, fmt.Sprintf("  URL:       %s", srv.URL))
-	}
-	if len(srv.Env) > 0 {
-		for _, k := range sortedKeys(srv.Env) {
-			lines = append(lines, fmt.Sprintf("  Env:       %s=%s", k, srv.Env[k]))
-		}
-	}
-	if len(srv.Headers) > 0 {
-		for _, k := range sortedKeys(srv.Headers) {
-			lines = append(lines, fmt.Sprintf("  Header:    %s=%s", k, srv.Headers[k]))
-		}
-	}
-	return strings.Join(lines, "\n") + "\n"
+	var b strings.Builder
+	writeServerFields(&b, srv, detailLabelStyle)
+	return b.String()
 }

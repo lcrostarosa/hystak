@@ -27,16 +27,22 @@ type Deployer interface {
 	Bootstrap(projectPath string) error
 }
 
+var deployerFactories = map[model.ClientType]func() Deployer{
+	model.ClientClaudeCode: func() Deployer { return &ClaudeCodeDeployer{} },
+}
+
+var unimplemented = map[model.ClientType]bool{
+	model.ClientClaudeDesktop: true,
+	model.ClientCursor:        true,
+}
+
 // NewDeployer returns a Deployer for the given client type.
 func NewDeployer(ct model.ClientType) (Deployer, error) {
-	switch ct {
-	case model.ClientClaudeCode:
-		return &ClaudeCodeDeployer{}, nil
-	case model.ClientClaudeDesktop:
-		return nil, fmt.Errorf("claude-desktop deployer is not yet implemented")
-	case model.ClientCursor:
-		return nil, fmt.Errorf("cursor deployer is not yet implemented")
-	default:
-		return nil, fmt.Errorf("unknown client type: %s", ct)
+	if f, ok := deployerFactories[ct]; ok {
+		return f(), nil
 	}
+	if unimplemented[ct] {
+		return nil, fmt.Errorf("%s deployer is not yet implemented", ct)
+	}
+	return nil, fmt.Errorf("unknown client type: %s", ct)
 }

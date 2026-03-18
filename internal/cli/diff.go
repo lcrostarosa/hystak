@@ -6,13 +6,13 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newDiffCmd() *cobra.Command {
+func (a *cliApp) newDiffCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "diff <project>",
 		Short: "Show drift diff between deployed and expected configs",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			diff, err := svc.Diff(args[0])
+			diff, err := a.svc.Diff(args[0])
 			if err != nil {
 				return err
 			}

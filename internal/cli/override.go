@@ -8,10 +8,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newOverrideCmd() *cobra.Command {
+func (a *cliApp) newOverrideCmd() *cobra.Command {
 	var (
-		envFlags  []string
-		argsFlag  []string
+		envFlags []string
+		argsFlag []string
 	)
 
 	cmd := &cobra.Command{
@@ -46,11 +46,11 @@ func newOverrideCmd() *cobra.Command {
 				return fmt.Errorf("at least one override flag required (--env or --args)")
 			}
 
-			if err := svc.Projects.SetOverride(projectName, serverName, override); err != nil {
+			if err := a.svc.Projects.SetOverride(projectName, serverName, override); err != nil {
 				return err
 			}
 
-			if err := svc.SaveProjects(); err != nil {
+			if err := a.svc.SaveProjects(); err != nil {
 				return err
 			}
 

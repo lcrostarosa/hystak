@@ -238,14 +238,10 @@ func (m ProjectsModel) Update(msg tea.Msg) (ProjectsModel, tea.Cmd) {
 		if m.focus == focusRight {
 			switch msg.String() {
 			case "up", "k":
-				if m.serverCursor > 0 {
-					m.serverCursor--
-				}
+				m.serverCursor = moveCursor(m.serverCursor, -1, len(m.allServers))
 				return m, nil
 			case "down", "j":
-				if m.serverCursor < len(m.allServers)-1 {
-					m.serverCursor++
-				}
+				m.serverCursor = moveCursor(m.serverCursor, 1, len(m.allServers))
 				return m, nil
 			case " ":
 				m.toggleServerAssignment()

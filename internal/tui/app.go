@@ -31,6 +31,12 @@ const (
 
 var tabLabels = []string{"Servers", "Projects"}
 
+// overlay is the interface for full-screen overlay models.
+type overlay interface {
+	SetSize(w, h int)
+	View() string
+}
+
 // AppModel is the root Bubble Tea model for the hystak TUI.
 type AppModel struct {
 	service   *service.Service
@@ -60,6 +66,19 @@ func NewApp(svc *service.Service) AppModel {
 	}
 }
 
+// activeOverlay returns the current overlay model, or nil in browse/confirm modes.
+func (m *AppModel) activeOverlay() overlay {
+	switch m.mode {
+	case ModeForm:
+		return &m.form
+	case ModeImport:
+		return &m.importer
+	case ModeDiff:
+		return &m.diff
+	}
+	return nil
+}
+
 // Init implements tea.Model.
 func (m AppModel) Init() tea.Cmd {
 	return nil
@@ -72,14 +91,8 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.updateContentSize()
-		if m.mode == ModeForm {
-			m.form.SetSize(m.width, m.height)
-		}
-		if m.mode == ModeImport {
-			m.importer.SetSize(m.width, m.height)
-		}
-		if m.mode == ModeDiff {
-			m.diff.SetSize(m.width, m.height)
+		if ov := m.activeOverlay(); ov != nil {
+			ov.SetSize(m.width, m.height)
 		}
 		return m, nil
 
@@ -96,18 +109,16 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case FormSubmittedMsg:
 		m.mode = ModeBrowse
 		m.err = nil
+		var err error
 		if msg.IsEdit {
-			if err := m.service.Registry.Update(m.form.editName, msg.Server); err != nil {
-				m.err = err
-			} else {
-				_ = m.service.SaveRegistry()
-			}
+			err = m.service.Registry.Update(m.form.editName, msg.Server)
 		} else {
-			if err := m.service.Registry.Add(msg.Server); err != nil {
-				m.err = err
-			} else {
-				_ = m.service.SaveRegistry()
-			}
+			err = m.service.Registry.Add(msg.Server)
+		}
+		if err != nil {
+			m.err = err
+		} else {
+			_ = m.service.SaveRegistry()
 		}
 		m.servers.refreshList()
 		return m, nil
@@ -232,11 +243,7 @@ func (m AppModel) contentHeight() int {
 	// Tab bar is 1 line + border = 2 lines, status bar is 1 line.
 	// contentStyle has padding(1,2) = 2 vertical lines.
 	overhead := 2 + 1 + 2
-	h := m.height - overhead
-	if h < 0 {
-		h = 0
-	}
-	return h
+	return max(0, m.height-overhead)
 }
 
 // View implements tea.Model.
@@ -246,14 +253,8 @@ func (m AppModel) View() string {
 	}
 
 	// Overlay modes take over the full screen.
-	if m.mode == ModeForm {
-		return m.form.View()
-	}
-	if m.mode == ModeImport {
-		return m.importer.View()
-	}
-	if m.mode == ModeDiff {
-		return m.diff.View()
+	if ov := m.activeOverlay(); ov != nil {
+		return ov.View()
 	}
 
 	tabBar := m.renderTabBar()
@@ -271,10 +272,7 @@ func (m AppModel) View() string {
 	// Calculate content height: total - tab bar - status bar - padding
 	tabBarHeight := lipgloss.Height(tabBar)
 	statusBarHeight := lipgloss.Height(statusBar)
-	contentHeight := m.height - tabBarHeight - statusBarHeight
-	if contentHeight < 0 {
-		contentHeight = 0
-	}
+	contentHeight := max(0, m.height-tabBarHeight-statusBarHeight)
 
 	styledContent := contentStyle.
 		Width(m.width).

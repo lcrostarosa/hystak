@@ -2,6 +2,7 @@ package project
 
 import (
 	"fmt"
+	"maps"
 	"os"
 	"sort"
 
@@ -295,32 +296,20 @@ func applyOverride(srv model.ServerDef, override *model.ServerOverride) model.Se
 	}
 
 	if override.Env != nil {
-		if srv.Env == nil {
-			srv.Env = make(map[string]string)
-		}
-		merged := make(map[string]string, len(srv.Env))
-		for k, v := range srv.Env {
-			merged[k] = v
-		}
-		for k, v := range override.Env {
-			merged[k] = v
-		}
-		srv.Env = merged
+		srv.Env = mergeMaps(srv.Env, override.Env)
 	}
 
 	if override.Headers != nil {
-		if srv.Headers == nil {
-			srv.Headers = make(map[string]string)
-		}
-		merged := make(map[string]string, len(srv.Headers))
-		for k, v := range srv.Headers {
-			merged[k] = v
-		}
-		for k, v := range override.Headers {
-			merged[k] = v
-		}
-		srv.Headers = merged
+		srv.Headers = mergeMaps(srv.Headers, override.Headers)
 	}
 
 	return srv
+}
+
+// mergeMaps merges base and override maps, with override keys winning.
+func mergeMaps(base, override map[string]string) map[string]string {
+	merged := make(map[string]string, len(base)+len(override))
+	maps.Copy(merged, base)
+	maps.Copy(merged, override)
+	return merged
 }

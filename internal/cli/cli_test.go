@@ -68,20 +68,10 @@ func TestListCommand(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list command failed: %v", err)
 	}
-	if !strings.Contains(out, "github") {
-		t.Errorf("expected output to contain 'github', got:\n%s", out)
-	}
-	if !strings.Contains(out, "remote-api") {
-		t.Errorf("expected output to contain 'remote-api', got:\n%s", out)
-	}
-	if !strings.Contains(out, "stdio") {
-		t.Errorf("expected output to contain 'stdio', got:\n%s", out)
-	}
-	if !strings.Contains(out, "http") {
-		t.Errorf("expected output to contain 'http', got:\n%s", out)
-	}
-	if !strings.Contains(out, "NAME") {
-		t.Errorf("expected output to contain table header 'NAME', got:\n%s", out)
+	for _, want := range []string{"github", "remote-api", "stdio", "http", "NAME"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output, got:\n%s", want, out)
+		}
 	}
 }
 
@@ -201,6 +191,49 @@ func TestOverrideCommandNoFlags(t *testing.T) {
 	_, err := runCommand(t, dir, "override", "myproject", "github")
 	if err == nil {
 		t.Error("expected error when no override flags provided")
+	}
+}
+
+func TestRunCommandNoArgs(t *testing.T) {
+	dir := setupTestConfig(t)
+	_, err := runCommand(t, dir, "run")
+	if err == nil {
+		t.Fatal("expected error when no project name given")
+	}
+	if !strings.Contains(err.Error(), "project name required") {
+		t.Errorf("expected 'project name required' error, got: %v", err)
+	}
+}
+
+func TestRunCommandNotFound(t *testing.T) {
+	dir := setupTestConfig(t)
+	_, err := runCommand(t, dir, "run", "nonexistent-project")
+	if err == nil {
+		t.Fatal("expected error for nonexistent project")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected 'not found' error, got: %v", err)
+	}
+}
+
+func TestRunCommandDryRun(t *testing.T) {
+	dir := setupTestConfig(t)
+
+	// Sync first so that the sync step inside run succeeds.
+	_, err := runCommand(t, dir, "sync", "myproject")
+	if err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+
+	out, err := runCommand(t, dir, "run", "myproject", "--dry-run")
+	if err != nil {
+		t.Fatalf("run --dry-run failed: %v", err)
+	}
+	if !strings.Contains(out, "Would run:") {
+		t.Errorf("expected 'Would run:' in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "Directory:") {
+		t.Errorf("expected 'Directory:' in output, got:\n%s", out)
 	}
 }
 

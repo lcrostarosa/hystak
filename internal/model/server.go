@@ -1,5 +1,10 @@
 package model
 
+import (
+	"maps"
+	"slices"
+)
+
 // Transport represents the MCP server transport type.
 type Transport string
 
@@ -19,6 +24,26 @@ type ServerDef struct {
 	Env         map[string]string `yaml:"env,omitempty"`
 	URL         string            `yaml:"url,omitempty"`
 	Headers     map[string]string `yaml:"headers,omitempty"`
+}
+
+// Equal performs semantic comparison, ignoring Name and Description (registry-only metadata).
+func (a ServerDef) Equal(b ServerDef) bool {
+	return a.Transport == b.Transport &&
+		a.Command == b.Command &&
+		a.URL == b.URL &&
+		slices.Equal(a.Args, b.Args) &&
+		maps.Equal(a.Env, b.Env) &&
+		maps.Equal(a.Headers, b.Headers)
+}
+
+// Target returns the transport-aware display field: URL for SSE/HTTP, Command for stdio.
+func (s ServerDef) Target() string {
+	switch s.Transport {
+	case TransportSSE, TransportHTTP:
+		return s.URL
+	default:
+		return s.Command
+	}
 }
 
 // ServerOverride holds per-project field overrides for a server.

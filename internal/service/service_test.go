@@ -615,7 +615,7 @@ func TestNew_LoadsFromDisk(t *testing.T) {
 	}
 }
 
-func TestServersEqual_IdenticalServers(t *testing.T) {
+func TestServerDef_Equal_IdenticalServers(t *testing.T) {
 	a := model.ServerDef{
 		Name:      "a",
 		Transport: model.TransportStdio,
@@ -632,39 +632,39 @@ func TestServersEqual_IdenticalServers(t *testing.T) {
 		Env:         map[string]string{"K": "V"},
 	}
 
-	if !serversEqual(a, b) {
+	if !a.Equal(b) {
 		t.Error("servers with same fields (ignoring name/description) should be equal")
 	}
 }
 
-func TestServersEqual_DifferentCommand(t *testing.T) {
+func TestServerDef_Equal_DifferentCommand(t *testing.T) {
 	a := model.ServerDef{Transport: model.TransportStdio, Command: "cmd1"}
 	b := model.ServerDef{Transport: model.TransportStdio, Command: "cmd2"}
-	if serversEqual(a, b) {
+	if a.Equal(b) {
 		t.Error("servers with different commands should not be equal")
 	}
 }
 
-func TestServersEqual_DifferentArgs(t *testing.T) {
+func TestServerDef_Equal_DifferentArgs(t *testing.T) {
 	a := model.ServerDef{Transport: model.TransportStdio, Args: []string{"a", "b"}}
 	b := model.ServerDef{Transport: model.TransportStdio, Args: []string{"a", "c"}}
-	if serversEqual(a, b) {
+	if a.Equal(b) {
 		t.Error("servers with different args should not be equal")
 	}
 }
 
-func TestServersEqual_DifferentEnv(t *testing.T) {
+func TestServerDef_Equal_DifferentEnv(t *testing.T) {
 	a := model.ServerDef{Transport: model.TransportStdio, Env: map[string]string{"K": "V1"}}
 	b := model.ServerDef{Transport: model.TransportStdio, Env: map[string]string{"K": "V2"}}
-	if serversEqual(a, b) {
+	if a.Equal(b) {
 		t.Error("servers with different env should not be equal")
 	}
 }
 
-func TestServersEqual_NilVsEmptyMaps(t *testing.T) {
+func TestServerDef_Equal_NilVsEmptyMaps(t *testing.T) {
 	a := model.ServerDef{Transport: model.TransportStdio}
 	b := model.ServerDef{Transport: model.TransportStdio, Env: map[string]string{}}
-	if !serversEqual(a, b) {
+	if !a.Equal(b) {
 		t.Error("nil and empty map should be equal")
 	}
 }

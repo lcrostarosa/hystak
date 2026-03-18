@@ -12,12 +12,15 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// svc is the shared service instance, initialized in PersistentPreRunE.
-var svc *service.Service
+// cliApp holds the shared service instance for all subcommands.
+type cliApp struct {
+	svc *service.Service
+}
 
 // newRootCmd builds the full command tree.
 func newRootCmd(version, commit, date string) *cobra.Command {
 	var cfgDir string
+	app := &cliApp{}
 
 	root := &cobra.Command{
 		Use:   "hystak",
@@ -31,7 +34,7 @@ func newRootCmd(version, commit, date string) *cobra.Command {
 				return fmt.Errorf("creating config directory: %w", err)
 			}
 			var err error
-			svc, err = service.New(cfgDir)
+			app.svc, err = service.New(cfgDir)
 			if err != nil {
 				return err
 			}
@@ -41,8 +44,8 @@ func newRootCmd(version, commit, date string) *cobra.Command {
 			if !isatty.IsTerminal(os.Stdout.Fd()) && !isatty.IsCygwinTerminal(os.Stdout.Fd()) {
 				return cmd.Help()
 			}
-			app := tui.NewApp(svc)
-			p := tea.NewProgram(app, tea.WithAltScreen())
+			m := tui.NewApp(app.svc)
+			p := tea.NewProgram(m, tea.WithAltScreen())
 			_, err := p.Run()
 			return err
 		},
@@ -51,11 +54,12 @@ func newRootCmd(version, commit, date string) *cobra.Command {
 
 	root.PersistentFlags().StringVar(&cfgDir, "config-dir", "", "config directory (default: ~/.config/hystak)")
 
-	root.AddCommand(newListCmd())
-	root.AddCommand(newSyncCmd())
-	root.AddCommand(newImportCmd())
-	root.AddCommand(newOverrideCmd())
-	root.AddCommand(newDiffCmd())
+	root.AddCommand(app.newListCmd())
+	root.AddCommand(app.newSyncCmd())
+	root.AddCommand(app.newImportCmd())
+	root.AddCommand(app.newOverrideCmd())
+	root.AddCommand(app.newDiffCmd())
+	root.AddCommand(app.newRunCmd())
 	root.AddCommand(newVersionCmd(version, commit, date))
 
 	return root

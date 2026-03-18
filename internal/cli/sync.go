@@ -8,7 +8,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newSyncCmd() *cobra.Command {
+func (a *cliApp) newSyncCmd() *cobra.Command {
 	var all bool
 
 	cmd := &cobra.Command{
@@ -16,10 +16,8 @@ func newSyncCmd() *cobra.Command {
 		Short: "Sync server configs to client config files",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			out := cmd.OutOrStdout()
-
 			if all {
-				results, err := svc.SyncAll()
+				results, err := a.svc.SyncAll()
 				if err != nil {
 					return err
 				}
@@ -38,12 +36,11 @@ func newSyncCmd() *cobra.Command {
 				return fmt.Errorf("project name required (or use --all)")
 			}
 
-			results, err := svc.SyncProject(args[0])
+			results, err := a.svc.SyncProject(args[0])
 			if err != nil {
 				return err
 			}
 			printSyncResults(cmd, args[0], results)
-			_ = out
 			return nil
 		},
 	}

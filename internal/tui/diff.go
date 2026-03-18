@@ -49,13 +49,7 @@ func (m *DiffModel) SetSize(w, h int) {
 	m.width = w
 	m.height = h
 
-	boxWidth := w - 4
-	if boxWidth < 40 {
-		boxWidth = 40
-	}
-	if boxWidth > 100 {
-		boxWidth = 100
-	}
+	boxWidth := clamp(w-4, 40, 100)
 
 	// viewport height: total height minus box border/padding (4) minus title/hints (5)
 	vpHeight := h - 10
@@ -138,13 +132,7 @@ func (m DiffModel) View() string {
 
 	b.WriteString(formHintStyle.Render("s: sync | ↑/↓: scroll | esc: close"))
 
-	boxWidth := m.width - 4
-	if boxWidth < 40 {
-		boxWidth = 40
-	}
-	if boxWidth > 100 {
-		boxWidth = 100
-	}
+	boxWidth := clamp(m.width-4, 40, 100)
 
 	content := formBoxStyle.Width(boxWidth).Render(b.String())
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)

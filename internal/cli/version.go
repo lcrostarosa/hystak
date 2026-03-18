@@ -11,7 +11,6 @@ func newVersionCmd(version, commit, date string) *cobra.Command {
 		Use:   "version",
 		Short: "Print version information",
 		Args:  cobra.NoArgs,
-		// Skip service initialization for version command.
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			return nil
 		},
