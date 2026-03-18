@@ -43,6 +43,7 @@ type AppModel struct {
 
 	servers  ServersModel
 	projects ProjectsModel
+	form     FormModel
 }
 
 // NewApp creates a new TUI application model.
@@ -69,10 +70,53 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width = msg.Width
 		m.height = msg.Height
 		m.updateContentSize()
+		if m.mode == ModeForm {
+			m.form.SetSize(m.width, m.height)
+		}
+		return m, nil
+
+	case RequestFormMsg:
+		if msg.EditServer != nil {
+			m.form = NewEditFormModel(*msg.EditServer)
+		} else {
+			m.form = NewFormModel()
+		}
+		m.form.SetSize(m.width, m.height)
+		m.mode = ModeForm
+		return m, nil
+
+	case FormSubmittedMsg:
+		m.mode = ModeBrowse
+		m.err = nil
+		if msg.IsEdit {
+			if err := m.service.Registry.Update(m.form.editName, msg.Server); err != nil {
+				m.err = err
+			} else {
+				_ = m.service.SaveRegistry()
+			}
+		} else {
+			if err := m.service.Registry.Add(msg.Server); err != nil {
+				m.err = err
+			} else {
+				_ = m.service.SaveRegistry()
+			}
+		}
+		m.servers.refreshList()
+		return m, nil
+
+	case FormCancelledMsg:
+		m.mode = ModeBrowse
 		return m, nil
 
 	case tea.KeyMsg:
-		// In overlay modes, only handle escape to return to browse.
+		// In form mode, route all input to the form.
+		if m.mode == ModeForm {
+			var cmd tea.Cmd
+			m.form, cmd = m.form.Update(msg)
+			return m, cmd
+		}
+
+		// In other overlay modes, handle escape to return to browse.
 		if m.mode != ModeBrowse {
 			if msg.String() == "esc" {
 				m.mode = ModeBrowse
@@ -151,6 +195,11 @@ func (m AppModel) contentHeight() int {
 func (m AppModel) View() string {
 	if m.width == 0 {
 		return "Loading..."
+	}
+
+	// Form overlay takes over the full screen.
+	if m.mode == ModeForm {
+		return m.form.View()
 	}
 
 	tabBar := m.renderTabBar()

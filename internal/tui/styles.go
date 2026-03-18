@@ -47,4 +47,32 @@ var (
 
 	syncMsgStyle = lipgloss.NewStyle().
 			Foreground(lipgloss.Color("42"))
+
+	formTitleStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("205")).
+			MarginBottom(1)
+
+	formLabelStyle = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(lipgloss.Color("245"))
+
+	formBoxStyle = lipgloss.NewStyle().
+			Border(lipgloss.RoundedBorder()).
+			BorderForeground(lipgloss.Color("205")).
+			Padding(1, 2)
+
+	formSelectedTransportStyle = lipgloss.NewStyle().
+					Bold(true).
+					Foreground(lipgloss.Color("205")).
+					Background(lipgloss.Color("236")).
+					Padding(0, 1)
+
+	formTransportStyle = lipgloss.NewStyle().
+				Foreground(lipgloss.Color("245")).
+				Padding(0, 1)
+
+	formHintStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("241")).
+			Italic(true)
 )
