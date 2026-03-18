@@ -1,0 +1,12 @@
+projects:
+    myproject:
+        path: /tmp/myproject
+        clients:
+            - claude-code
+        tags:
+            - core
+        mcps:
+            - slack
+    other:
+        path: /tmp/other
+        clients: []

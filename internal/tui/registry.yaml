@@ -1,0 +1,8 @@
+servers:
+    qdrant:
+        name: qdrant
+        description: Qdrant vector database
+        transport: http
+        url: http://localhost:6333/mcp
+        headers:
+            Authorization: Bearer ${QDRANT_API_KEY}
