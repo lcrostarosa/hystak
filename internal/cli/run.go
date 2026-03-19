@@ -56,15 +56,10 @@ Arguments after -- are forwarded to the client process.`,
 				}
 			}
 
-			// Fail fast: resolve executable before syncing.
-			execPath, err := launch.ResolveExecutable(execName)
-			if err != nil {
-				return err
-			}
-
 			// Determine working directory.
 			workDir := proj.Path
 			if workDir == "" || workDir == "~" {
+				var err error
 				workDir, err = os.Getwd()
 				if err != nil {
 					return fmt.Errorf("getting current directory: %w", err)
@@ -88,9 +83,15 @@ Arguments after -- are forwarded to the client process.`,
 			}
 
 			if dryRun {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Would run: %s %v\n", execPath, extraArgs)
+				fmt.Fprintf(cmd.ErrOrStderr(), "Would run: %s %v\n", execName, extraArgs)
 				fmt.Fprintf(cmd.ErrOrStderr(), "Directory: %s\n", workDir)
 				return nil
+			}
+
+			// Resolve executable only when actually launching.
+			execPath, err := launch.ResolveExecutable(execName)
+			if err != nil {
+				return err
 			}
 
 			return launch.Exec(execPath, extraArgs, workDir)
