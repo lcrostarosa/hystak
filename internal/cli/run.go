@@ -4,14 +4,16 @@ import (
 	"fmt"
 	"os"
 
+	hysterr "github.com/lcrostarosa/hystak/internal/errors"
 	"github.com/lcrostarosa/hystak/internal/launch"
 	"github.com/spf13/cobra"
 )
 
 func (a *cliApp) newRunCmd() *cobra.Command {
 	var (
-		noSync bool
-		dryRun bool
+		noSync      bool
+		dryRun      bool
+		profileName string
 	)
 
 	cmd := &cobra.Command{
@@ -36,70 +38,69 @@ Arguments after -- are forwarded to the client process.`,
 			}
 
 			projectName := args[0]
-			proj, ok := a.svc.Projects.Get(projectName)
+			proj, ok := a.svc.GetProject(projectName)
 			if !ok {
-				return fmt.Errorf("project %q not found", projectName)
+				return hysterr.ProjectNotFound(projectName)
 			}
 
-			// Determine client executable.
-			var execName string
+			// If --profile specified, set it as active before syncing.
+			if profileName != "" {
+				if err := a.svc.SetActiveProfile(projectName, profileName); err != nil {
+					return fmt.Errorf("setting profile: %w", err)
+				}
+				// Reload project after profile change.
+				proj, _ = a.svc.GetProject(projectName)
+			}
+
+			// If an explicit client is specified, use it directly instead of syncAndLaunch.
 			if len(args) > 1 {
-				execName = args[1]
-			} else {
-				if len(proj.Clients) == 0 {
-					return fmt.Errorf("project %q has no clients configured and no client was specified", projectName)
+				execName := args[1]
+
+				workDir := proj.Path
+				if workDir == "" || workDir == "~" {
+					var err error
+					workDir, err = os.Getwd()
+					if err != nil {
+						return fmt.Errorf("getting current directory: %w", err)
+					}
 				}
-				var err error
-				execName, err = launch.DefaultExecutable(proj.Clients[0])
+
+				if info, err := os.Stat(workDir); err != nil {
+					return fmt.Errorf("project directory %q: %w", workDir, err)
+				} else if !info.IsDir() {
+					return fmt.Errorf("project path %q is not a directory", workDir)
+				}
+
+				if !noSync {
+					results, err := a.svc.SyncProject(projectName)
+					if err != nil {
+						return fmt.Errorf("sync failed: %w", err)
+					}
+					printSyncResults(cmd, projectName, results)
+				}
+
+				if dryRun {
+					fmt.Fprintf(cmd.ErrOrStderr(), "Would run: %s %v\n", execName, extraArgs)
+					fmt.Fprintf(cmd.ErrOrStderr(), "Directory: %s\n", workDir)
+					return nil
+				}
+
+				execPath, err := launch.ResolveExecutable(execName)
 				if err != nil {
-					return fmt.Errorf("cannot determine default client for project %q: %w", projectName, err)
+					return err
 				}
+
+				return launch.Exec(execPath, extraArgs, workDir)
 			}
 
-			// Determine working directory.
-			workDir := proj.Path
-			if workDir == "" || workDir == "~" {
-				var err error
-				workDir, err = os.Getwd()
-				if err != nil {
-					return fmt.Errorf("getting current directory: %w", err)
-				}
-			}
-
-			// Validate working directory exists.
-			if info, err := os.Stat(workDir); err != nil {
-				return fmt.Errorf("project directory %q: %w", workDir, err)
-			} else if !info.IsDir() {
-				return fmt.Errorf("project path %q is not a directory", workDir)
-			}
-
-			// Sync unless --no-sync.
-			if !noSync {
-				results, err := a.svc.SyncProject(projectName)
-				if err != nil {
-					return fmt.Errorf("sync failed: %w", err)
-				}
-				printSyncResults(cmd, projectName, results)
-			}
-
-			if dryRun {
-				fmt.Fprintf(cmd.ErrOrStderr(), "Would run: %s %v\n", execName, extraArgs)
-				fmt.Fprintf(cmd.ErrOrStderr(), "Directory: %s\n", workDir)
-				return nil
-			}
-
-			// Resolve executable only when actually launching.
-			execPath, err := launch.ResolveExecutable(execName)
-			if err != nil {
-				return err
-			}
-
-			return launch.Exec(execPath, extraArgs, workDir)
+			// Default client: use shared helper.
+			return a.syncAndLaunch(cmd, proj, extraArgs, noSync, dryRun)
 		},
 	}
 
 	cmd.Flags().BoolVar(&noSync, "no-sync", false, "skip the sync step")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would happen without executing")
+	cmd.Flags().StringVar(&profileName, "profile", "", "use a specific profile for this run")
 
 	return cmd
 }

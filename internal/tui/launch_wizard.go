@@ -36,12 +36,12 @@ var launchStepLabels = []string{
 	"Isolation",
 }
 
-// launchWizardMode is the entry mode for the wizard.
-type launchWizardMode int
+// LaunchWizardMode is the entry mode for the wizard.
+type LaunchWizardMode int
 
 const (
-	lwModeSequential launchWizardMode = iota // first launch: walk through all
-	lwModeHub                                // on-demand: jump to any category
+	LWModeSequential LaunchWizardMode = iota // first launch: walk through all
+	LWModeHub                                // on-demand: jump to any category
 )
 
 // wizardPhase tracks the high-level phase of the wizard.
@@ -56,7 +56,7 @@ const (
 type RequestLaunchWizardMsg struct {
 	Project     *model.Project
 	ProjectPath string
-	Mode        launchWizardMode
+	Mode        LaunchWizardMode
 	Discovered  *discovery.Items
 }
 
@@ -72,7 +72,7 @@ type LaunchWizardCancelledMsg struct{}
 // LaunchWizardModel is the Bubble Tea model for the launch wizard.
 type LaunchWizardModel struct {
 	project    *model.Project
-	mode       launchWizardMode
+	mode       LaunchWizardMode
 	phase      wizardPhase
 	step       launchStep
 	discovered *discovery.Items
@@ -118,7 +118,7 @@ var isolationOptions = []struct {
 // NewLaunchWizardModel creates a new launch wizard.
 func NewLaunchWizardModel(
 	proj *model.Project,
-	mode launchWizardMode,
+	mode LaunchWizardMode,
 	discovered *discovery.Items,
 	existingProfile *profile.Profile,
 ) LaunchWizardModel {
@@ -210,7 +210,7 @@ func (m LaunchWizardModel) handleKey(msg tea.KeyMsg) (LaunchWizardModel, tea.Cmd
 	case phaseChecklist:
 		return m.handleChecklistKey(msg)
 	default:
-		if m.mode == lwModeHub {
+		if m.mode == LWModeHub {
 			return m.handleHubKey(msg)
 		}
 		return m.handleSequentialKey(msg)
@@ -275,7 +275,7 @@ func (m LaunchWizardModel) handleChecklistKey(msg tea.KeyMsg) (LaunchWizardModel
 	case "e":
 		// Back to hub mode for editing
 		m.phase = phaseSteps
-		m.mode = lwModeHub
+		m.mode = LWModeHub
 		return m, nil
 	case "esc":
 		return m, func() tea.Msg { return LaunchWizardCancelledMsg{} }
@@ -531,7 +531,7 @@ func (m LaunchWizardModel) Step() launchStep { return m.step }
 func (m LaunchWizardModel) Phase() wizardPhase { return m.phase }
 
 // WizardMode returns the current wizard mode.
-func (m LaunchWizardModel) WizardMode() launchWizardMode { return m.mode }
+func (m LaunchWizardModel) WizardMode() LaunchWizardMode { return m.mode }
 
 // Selection accessors.
 func (m LaunchWizardModel) MCPSelections() map[string]bool        { return m.mcpSelections }
@@ -551,7 +551,7 @@ func (m LaunchWizardModel) View() string {
 	case phaseChecklist:
 		return m.renderChecklistView()
 	default:
-		if m.mode == lwModeHub {
+		if m.mode == LWModeHub {
 			return m.renderHubView()
 		}
 		return m.renderSequentialView()

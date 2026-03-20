@@ -9,7 +9,10 @@ import (
 )
 
 func (a *cliApp) newSyncCmd() *cobra.Command {
-	var all bool
+	var (
+		all         bool
+		profileName string
+	)
 
 	cmd := &cobra.Command{
 		Use:   "sync [project]",
@@ -36,16 +39,30 @@ func (a *cliApp) newSyncCmd() *cobra.Command {
 				return fmt.Errorf("project name required (or use --all)")
 			}
 
-			results, err := a.svc.SyncProject(args[0])
+			projectName := args[0]
+
+			// If --profile specified, sync that specific profile.
+			if profileName != "" {
+				results, err := a.svc.SyncProfile(projectName, profileName)
+				if err != nil {
+					return err
+				}
+				printSyncResults(cmd, projectName, results)
+				return nil
+			}
+
+			// Default: sync using active profile (or legacy direct assignments).
+			results, err := a.svc.SyncProject(projectName)
 			if err != nil {
 				return err
 			}
-			printSyncResults(cmd, args[0], results)
+			printSyncResults(cmd, projectName, results)
 			return nil
 		},
 	}
 
 	cmd.Flags().BoolVar(&all, "all", false, "sync all projects")
+	cmd.Flags().StringVar(&profileName, "profile", "", "sync using a specific profile")
 
 	return cmd
 }

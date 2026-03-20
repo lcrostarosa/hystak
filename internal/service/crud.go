@@ -6,6 +6,7 @@ import (
 
 	hysterr "github.com/lcrostarosa/hystak/internal/errors"
 	"github.com/lcrostarosa/hystak/internal/model"
+	"github.com/lcrostarosa/hystak/internal/profile"
 )
 
 // --- Server CRUD ---
@@ -516,6 +517,30 @@ func (s *Service) SetActiveProfile(projectName, profileName string) error {
 	}
 
 	proj.ActiveProfile = profileName
+	s.projects.Projects[projectName] = proj
+	return s.saveProjects()
+}
+
+// SaveProjectProfile saves a profile to a project's inline profiles map and persists.
+func (s *Service) SaveProjectProfile(projectName, profileName string, prof profile.Profile) error {
+	proj, ok := s.projects.Get(projectName)
+	if !ok {
+		return hysterr.ProjectNotFound(projectName)
+	}
+
+	if proj.Profiles == nil {
+		proj.Profiles = make(map[string]model.ProjectProfile)
+	}
+	proj.Profiles[profileName] = model.ProjectProfile{
+		Description: prof.Description,
+		MCPs:        prof.MCPs,
+		Skills:      prof.Skills,
+		Hooks:       prof.Hooks,
+		Permissions: prof.Permissions,
+		EnvVars:     prof.EnvVars,
+		ClaudeMD:    prof.ClaudeMD,
+		Isolation:   string(prof.Isolation),
+	}
 	s.projects.Projects[projectName] = proj
 	return s.saveProjects()
 }

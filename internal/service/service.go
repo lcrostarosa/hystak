@@ -3,12 +3,14 @@ package service
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/lcrostarosa/hystak/internal/backup"
 	"github.com/lcrostarosa/hystak/internal/deploy"
+	"github.com/lcrostarosa/hystak/internal/discovery"
 	hysterr "github.com/lcrostarosa/hystak/internal/errors"
 	"github.com/lcrostarosa/hystak/internal/model"
 	"github.com/lcrostarosa/hystak/internal/profile"
@@ -145,6 +147,14 @@ func (s *Service) saveRegistry() error {
 // saveProjects writes the project store back to disk.
 func (s *Service) saveProjects() error {
 	return s.projects.Save(filepath.Join(s.configDir, "projects.yaml"))
+}
+
+// Discover runs the discovery engine against a project path and returns discovered items.
+func (s *Service) Discover(projectPath string) *discovery.Items {
+	home, _ := os.UserHomeDir()
+	claudeHome := filepath.Join(home, ".claude")
+	engine := discovery.NewEngine(claudeHome, s.registry)
+	return engine.Scan(projectPath)
 }
 
 // SyncProject resolves servers for a project and writes them to each configured client.

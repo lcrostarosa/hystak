@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/spf13/cobra"
 )
 
 func setupTestConfig(t *testing.T) string {
@@ -237,6 +239,245 @@ func TestRunCommandDryRun(t *testing.T) {
 	}
 }
 
+func runCommandWithInput(t *testing.T, dir string, stdin string, args ...string) (string, error) {
+	t.Helper()
+	cmd := newRootCmd("test-version", "abc123", "2026-01-01")
+	buf := new(bytes.Buffer)
+	cmd.SetOut(buf)
+	cmd.SetErr(buf)
+	cmd.SetIn(strings.NewReader(stdin))
+	cmd.SetArgs(append([]string{"--config-dir", dir}, args...))
+	err := cmd.Execute()
+	return buf.String(), err
+}
+
+// ---- Backup command tests ----
+
+func TestBackupCommand(t *testing.T) {
+	dir := setupTestConfig(t)
+	// Sync first to create .mcp.json.
+	if _, err := runCommand(t, dir, "sync", "myproject"); err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+	out, err := runCommand(t, dir, "backup", "myproject")
+	if err != nil {
+		t.Fatalf("backup failed: %v", err)
+	}
+	if !strings.Contains(out, "backed up") {
+		t.Errorf("expected 'backed up' in output, got:\n%s", out)
+	}
+}
+
+func TestBackupCommand_NoArgs(t *testing.T) {
+	dir := setupTestConfig(t)
+	_, err := runCommand(t, dir, "backup")
+	if err == nil {
+		t.Fatal("expected error when no project name and no --all")
+	}
+}
+
+func TestBackupCommand_All(t *testing.T) {
+	dir := setupTestConfig(t)
+	if _, err := runCommand(t, dir, "sync", "myproject"); err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+	out, err := runCommand(t, dir, "backup", "--all")
+	if err != nil {
+		t.Fatalf("backup --all failed: %v", err)
+	}
+	if !strings.Contains(out, "myproject") {
+		t.Errorf("expected project name in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "backed up") {
+		t.Errorf("expected 'backed up' in output, got:\n%s", out)
+	}
+}
+
+func TestBackupCommand_ListEmpty(t *testing.T) {
+	dir := setupTestConfig(t)
+	out, err := runCommand(t, dir, "backup", "--list", "myproject")
+	if err != nil {
+		t.Fatalf("backup --list failed: %v", err)
+	}
+	if !strings.Contains(out, "No backups") {
+		t.Errorf("expected 'No backups' message, got:\n%s", out)
+	}
+}
+
+func TestBackupCommand_ListAfterBackup(t *testing.T) {
+	dir := setupTestConfig(t)
+	if _, err := runCommand(t, dir, "sync", "myproject"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runCommand(t, dir, "backup", "myproject"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runCommand(t, dir, "backup", "--list", "myproject")
+	if err != nil {
+		t.Fatalf("backup --list failed: %v", err)
+	}
+	for _, want := range []string{"TIMESTAMP", "CLIENT", "SCOPE", "PATH"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in list output, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestBackupCommand_ListAll(t *testing.T) {
+	dir := setupTestConfig(t)
+	if _, err := runCommand(t, dir, "sync", "myproject"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runCommand(t, dir, "backup", "myproject"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runCommand(t, dir, "backup", "--list")
+	if err != nil {
+		t.Fatalf("backup --list (all) failed: %v", err)
+	}
+	if !strings.Contains(out, "TIMESTAMP") {
+		t.Errorf("expected table header in output, got:\n%s", out)
+	}
+}
+
+func TestBackupCommand_ProjectNotFound(t *testing.T) {
+	dir := setupTestConfig(t)
+	_, err := runCommand(t, dir, "backup", "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent project")
+	}
+}
+
+// ---- Restore command tests ----
+
+func TestRestoreCommand_NoArgs(t *testing.T) {
+	dir := setupTestConfig(t)
+	_, err := runCommandWithInput(t, dir, "", "restore")
+	if err == nil {
+		t.Fatal("expected error when no project name and no --global")
+	}
+}
+
+func TestRestoreCommand_NoBackups(t *testing.T) {
+	dir := setupTestConfig(t)
+	out, err := runCommandWithInput(t, dir, "", "restore", "myproject")
+	if err != nil {
+		t.Fatalf("restore failed: %v", err)
+	}
+	if !strings.Contains(out, "No backups") {
+		t.Errorf("expected 'No backups' message, got:\n%s", out)
+	}
+}
+
+func TestRestoreCommand_WithIndex(t *testing.T) {
+	dir := setupTestConfig(t)
+	if _, err := runCommand(t, dir, "sync", "myproject"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runCommand(t, dir, "backup", "myproject"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runCommandWithInput(t, dir, "y\n", "restore", "myproject", "--index", "0")
+	if err != nil {
+		t.Fatalf("restore failed: %v", err)
+	}
+	if !strings.Contains(out, "Restored") {
+		t.Errorf("expected 'Restored' in output, got:\n%s", out)
+	}
+}
+
+func TestRestoreCommand_IndexOutOfRange(t *testing.T) {
+	dir := setupTestConfig(t)
+	if _, err := runCommand(t, dir, "sync", "myproject"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runCommand(t, dir, "backup", "myproject"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runCommandWithInput(t, dir, "y\n", "restore", "myproject", "--index", "99")
+	if err == nil {
+		t.Fatal("expected error for out of range index")
+	}
+	if !strings.Contains(err.Error(), "out of range") {
+		t.Errorf("expected 'out of range' error, got: %v", err)
+	}
+}
+
+func TestRestoreCommand_Cancelled(t *testing.T) {
+	dir := setupTestConfig(t)
+	if _, err := runCommand(t, dir, "sync", "myproject"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runCommand(t, dir, "backup", "myproject"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runCommandWithInput(t, dir, "n\n", "restore", "myproject", "--index", "0")
+	if err != nil {
+		t.Fatalf("restore failed: %v", err)
+	}
+	if !strings.Contains(out, "Cancelled") {
+		t.Errorf("expected 'Cancelled' in output, got:\n%s", out)
+	}
+}
+
+func TestRestoreCommand_InteractiveSelect(t *testing.T) {
+	dir := setupTestConfig(t)
+	if _, err := runCommand(t, dir, "sync", "myproject"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runCommand(t, dir, "backup", "myproject"); err != nil {
+		t.Fatal(err)
+	}
+	out, err := runCommandWithInput(t, dir, "0\ny\n", "restore", "myproject")
+	if err != nil {
+		t.Fatalf("restore failed: %v", err)
+	}
+	if !strings.Contains(out, "Restored") {
+		t.Errorf("expected 'Restored' in output, got:\n%s", out)
+	}
+}
+
+func TestRestoreCommand_InvalidSelection(t *testing.T) {
+	dir := setupTestConfig(t)
+	if _, err := runCommand(t, dir, "sync", "myproject"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := runCommand(t, dir, "backup", "myproject"); err != nil {
+		t.Fatal(err)
+	}
+	_, err := runCommandWithInput(t, dir, "abc\n", "restore", "myproject")
+	if err == nil {
+		t.Fatal("expected error for invalid selection")
+	}
+	if !strings.Contains(err.Error(), "invalid selection") {
+		t.Errorf("expected 'invalid selection' error, got: %v", err)
+	}
+}
+
+func TestRestoreCommand_ProjectNotFound(t *testing.T) {
+	dir := setupTestConfig(t)
+	_, err := runCommandWithInput(t, dir, "", "restore", "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent project")
+	}
+}
+
+func TestRestoreCommand_Global(t *testing.T) {
+	dir := setupTestConfig(t)
+	// Sync creates project-level backups, not global ones.
+	if _, err := runCommand(t, dir, "sync", "myproject"); err != nil {
+		t.Fatal(err)
+	}
+	// restore --global should find no global backups.
+	out, err := runCommandWithInput(t, dir, "", "restore", "--global")
+	if err != nil {
+		t.Fatalf("restore --global failed: %v", err)
+	}
+	if !strings.Contains(out, "No backups") {
+		t.Errorf("expected 'No backups' message for global scope, got:\n%s", out)
+	}
+}
+
 func TestRootCommandNonTTY(t *testing.T) {
 	dir := setupTestConfig(t)
 	// When stdout is not a TTY (as in tests), root command should show help.
@@ -246,5 +487,134 @@ func TestRootCommandNonTTY(t *testing.T) {
 	}
 	if !strings.Contains(out, "hystak") {
 		t.Errorf("expected help output to contain 'hystak', got:\n%s", out)
+	}
+}
+
+// ---- Sync --profile tests ----
+
+func TestSyncCommandWithProfile(t *testing.T) {
+	dir := setupTestConfig(t)
+
+	// Create a profile-aware project config.
+	projDir := filepath.Join(dir, "myproject")
+	projYAML := fmt.Sprintf(`projects:
+  myproject:
+    path: %s
+    clients: [claude-code]
+    mcps:
+      - github
+    profiles:
+      light:
+        mcps: [github]
+    active_profile: light
+    launched: true
+`, projDir)
+	if err := os.WriteFile(filepath.Join(dir, "projects.yaml"), []byte(projYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runCommand(t, dir, "sync", "myproject", "--profile", "light")
+	if err != nil {
+		t.Fatalf("sync --profile failed: %v", err)
+	}
+	if !strings.Contains(out, "github") {
+		t.Errorf("expected output to mention 'github', got:\n%s", out)
+	}
+}
+
+func TestSyncCommandWithInvalidProfile(t *testing.T) {
+	dir := setupTestConfig(t)
+	_, err := runCommand(t, dir, "sync", "myproject", "--profile", "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent profile")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected 'not found' error, got: %v", err)
+	}
+}
+
+// ---- Run --profile tests ----
+
+func TestRunCommandWithProfileDryRun(t *testing.T) {
+	dir := setupTestConfig(t)
+	projDir := filepath.Join(dir, "myproject")
+
+	// Create a profile-aware project config.
+	projYAML := fmt.Sprintf(`projects:
+  myproject:
+    path: %s
+    clients: [claude-code]
+    mcps:
+      - github
+    profiles:
+      light:
+        mcps: [github]
+`, projDir)
+	if err := os.WriteFile(filepath.Join(dir, "projects.yaml"), []byte(projYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sync first so the sync step inside run succeeds.
+	_, err := runCommand(t, dir, "sync", "myproject")
+	if err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+
+	out, err := runCommand(t, dir, "run", "myproject", "--profile", "light", "--dry-run")
+	if err != nil {
+		t.Fatalf("run --profile --dry-run failed: %v", err)
+	}
+	if !strings.Contains(out, "Would run:") {
+		t.Errorf("expected 'Would run:' in output, got:\n%s", out)
+	}
+}
+
+// ---- Configure flag tests ----
+
+func TestConfigureFlagHelpText(t *testing.T) {
+	// Verify that --configure flag is available.
+	cmd := newRootCmd("test", "abc", "2026-01-01")
+	flag := cmd.Flags().Lookup("configure")
+	if flag == nil {
+		t.Fatal("expected --configure flag on root command")
+	}
+	if flag.Usage == "" {
+		t.Error("expected --configure flag to have usage text")
+	}
+}
+
+func TestRunCommandProfileFlagHelpText(t *testing.T) {
+	cmd := newRootCmd("test", "abc", "2026-01-01")
+	var runCmd *cobra.Command
+	for _, c := range cmd.Commands() {
+		if c.Name() == "run" {
+			runCmd = c
+			break
+		}
+	}
+	if runCmd == nil {
+		t.Fatal("expected 'run' subcommand")
+	}
+	flag := runCmd.Flags().Lookup("profile")
+	if flag == nil {
+		t.Fatal("expected --profile flag on run command")
+	}
+}
+
+func TestSyncCommandProfileFlagHelpText(t *testing.T) {
+	cmd := newRootCmd("test", "abc", "2026-01-01")
+	var syncCmd *cobra.Command
+	for _, c := range cmd.Commands() {
+		if c.Name() == "sync" {
+			syncCmd = c
+			break
+		}
+	}
+	if syncCmd == nil {
+		t.Fatal("expected 'sync' subcommand")
+	}
+	flag := syncCmd.Flags().Lookup("profile")
+	if flag == nil {
+		t.Fatal("expected --profile flag on sync command")
 	}
 }

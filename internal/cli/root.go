@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-isatty"
 	"github.com/lcrostarosa/hystak/internal/config"
+	"github.com/lcrostarosa/hystak/internal/profile"
 	"github.com/lcrostarosa/hystak/internal/service"
 	"github.com/lcrostarosa/hystak/internal/tui"
 	"github.com/spf13/cobra"
@@ -20,6 +21,7 @@ type cliApp struct {
 // newRootCmd builds the full command tree.
 func newRootCmd(version, commit, date string) *cobra.Command {
 	var cfgDir string
+	var configure string
 	app := &cliApp{}
 
 	root := &cobra.Command{
@@ -67,6 +69,11 @@ Arguments after -- are forwarded to the claude process.`,
 				return cmd.Help()
 			}
 
+			// --configure flag: open wizard in hub mode for the specified project.
+			if configure != "" {
+				return app.runWizardAndLaunch(cmd, configure, tui.LWModeHub, extraArgs)
+			}
+
 			// First-time setup wizard.
 			if app.svc.IsEmpty() {
 				wizard := tui.NewWizardModel(app.svc)
@@ -91,11 +98,7 @@ Arguments after -- are forwarded to the claude process.`,
 			}
 
 			if pickerResult.Manage {
-				// Launch full management TUI.
-				m := tui.NewApp(app.svc)
-				mp := tea.NewProgram(m, tea.WithAltScreen())
-				_, err := mp.Run()
-				return err
+				return app.runManageTUI(cmd, extraArgs)
 			}
 
 			if pickerResult.Project == nil {
@@ -103,13 +106,26 @@ Arguments after -- are forwarded to the claude process.`,
 				return launchBare(extraArgs)
 			}
 
-			// Sync and launch selected project.
-			return app.syncAndLaunch(cmd, *pickerResult.Project, extraArgs, false, false)
+			proj := *pickerResult.Project
+
+			// Configure mode: open wizard in hub mode.
+			if pickerResult.Configure {
+				return app.runWizardAndLaunch(cmd, proj.Name, tui.LWModeHub, extraArgs)
+			}
+
+			// First-time launch: open wizard in sequential mode.
+			if !app.svc.HasLaunched(proj.Name) {
+				return app.runWizardAndLaunch(cmd, proj.Name, tui.LWModeSequential, extraArgs)
+			}
+
+			// Returning project with active profile: sync and launch.
+			return app.syncAndLaunch(cmd, proj, extraArgs, false, false)
 		},
 		SilenceUsage: true,
 	}
 
 	root.PersistentFlags().StringVar(&cfgDir, "config-dir", "", "config directory (default: ~/.hystak)")
+	root.Flags().StringVar(&configure, "configure", "", "open launch wizard for the specified project")
 
 	root.AddCommand(app.newListCmd())
 	root.AddCommand(app.newSyncCmd())
@@ -124,6 +140,133 @@ Arguments after -- are forwarded to the claude process.`,
 	root.AddCommand(newVersionCmd(version, commit, date))
 
 	return root
+}
+
+// runManageTUI launches the management TUI and handles a launch request if emitted.
+func (a *cliApp) runManageTUI(cmd *cobra.Command, extraArgs []string) error {
+	m := tui.NewApp(a.svc)
+	mp := tea.NewProgram(m, tea.WithAltScreen())
+	result, err := mp.Run()
+	if err != nil {
+		return err
+	}
+	if app, ok := result.(tui.AppModel); ok {
+		if proj := app.LaunchRequest(); proj != nil {
+			return a.syncAndLaunch(cmd, *proj, extraArgs, false, false)
+		}
+	}
+	return nil
+}
+
+// runWizardAndLaunch runs the launch wizard for a project, saves the resulting profile,
+// and optionally syncs and launches.
+func (a *cliApp) runWizardAndLaunch(cmd *cobra.Command, projectName string, mode tui.LaunchWizardMode, extraArgs []string) error {
+	proj, ok := a.svc.GetProject(projectName)
+	if !ok {
+		return fmt.Errorf("project %q not found", projectName)
+	}
+
+	// Run discovery for this project.
+	discovered := a.svc.Discover(proj.Path)
+
+	// Load existing profile for pre-population if the project has been launched before.
+	var existingProfile *profile.Profile
+	if activeName, _ := a.svc.GetActiveProfile(projectName); activeName != "" {
+		// loadProfile is internal, so reconstruct from project profile data.
+		if pp, ok := proj.Profiles[activeName]; ok {
+			existingProfile = &profile.Profile{
+				Name:        activeName,
+				Description: pp.Description,
+				MCPs:        pp.MCPs,
+				Skills:      pp.Skills,
+				Hooks:       pp.Hooks,
+				Permissions: pp.Permissions,
+				EnvVars:     pp.EnvVars,
+				ClaudeMD:    pp.ClaudeMD,
+				Isolation:   profile.IsolationStrategy(pp.Isolation),
+			}
+		}
+	}
+
+	// Run the launch wizard as a standalone Bubble Tea program.
+	wiz := tui.NewLaunchWizardModel(&proj, mode, discovered, existingProfile)
+	wrapper := newWizardWrapper(wiz)
+	p := tea.NewProgram(wrapper, tea.WithAltScreen())
+	result, err := p.Run()
+	if err != nil {
+		return err
+	}
+
+	wr := result.(wizardWrapper)
+	if wr.cancelled {
+		return nil
+	}
+
+	prof := wr.profile
+	profileName := "default"
+
+	// Save the profile to the project.
+	if err := a.svc.SaveProjectProfile(projectName, profileName, prof); err != nil {
+		return fmt.Errorf("saving profile: %w", err)
+	}
+
+	// Set as active profile.
+	if err := a.svc.SetActiveProfile(projectName, profileName); err != nil {
+		return fmt.Errorf("setting active profile: %w", err)
+	}
+
+	// Mark project as launched.
+	if err := a.svc.MarkLaunched(projectName); err != nil {
+		return fmt.Errorf("marking launched: %w", err)
+	}
+
+	if !wr.launch {
+		fmt.Fprintln(cmd.OutOrStdout(), "Profile saved.")
+		return nil
+	}
+
+	// Sync and launch.
+	// Reload project since we just modified it.
+	proj, _ = a.svc.GetProject(projectName)
+	return a.syncAndLaunch(cmd, proj, extraArgs, false, false)
+}
+
+// wizardWrapper wraps LaunchWizardModel to implement tea.Model for standalone use.
+type wizardWrapper struct {
+	inner     tui.LaunchWizardModel
+	profile   profile.Profile
+	launch    bool
+	cancelled bool
+}
+
+func newWizardWrapper(m tui.LaunchWizardModel) wizardWrapper {
+	return wizardWrapper{inner: m}
+}
+
+func (w wizardWrapper) Init() tea.Cmd {
+	return w.inner.Init()
+}
+
+func (w wizardWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg.(type) {
+	case tui.LaunchWizardCompleteMsg:
+		complete := msg.(tui.LaunchWizardCompleteMsg)
+		w.profile = complete.Profile
+		w.launch = complete.Launch
+		return w, tea.Quit
+
+	case tui.LaunchWizardCancelledMsg:
+		w.cancelled = true
+		return w, tea.Quit
+	}
+
+	var cmd tea.Cmd
+	w.inner, cmd = w.inner.Update(msg)
+	return w, cmd
+}
+
+func (w wizardWrapper) View() string {
+	return w.inner.View()
 }
 
 // Execute runs the CLI with the given version info.

@@ -1543,3 +1543,84 @@ func TestSyncProfile_WithSkillsAndHooks(t *testing.T) {
 		t.Error("settings should contain PreToolUse hook")
 	}
 }
+
+func TestSaveProjectProfile(t *testing.T) {
+	svc, _ := setupService(t)
+
+	prof := profile.Profile{
+		Name:        "frontend",
+		Description: "Frontend work",
+		MCPs:        []string{"github"},
+		Skills:      []string{"reviewer"},
+		EnvVars:     map[string]string{"MODE": "dev"},
+		Isolation:   profile.IsolationNone,
+	}
+
+	if err := svc.SaveProjectProfile("myproject", "frontend", prof); err != nil {
+		t.Fatalf("SaveProjectProfile: %v", err)
+	}
+
+	// Verify the profile was saved to the project.
+	proj, ok := svc.projects.Get("myproject")
+	if !ok {
+		t.Fatal("project not found after save")
+	}
+	pp, ok := proj.Profiles["frontend"]
+	if !ok {
+		t.Fatal("profile 'frontend' not found in project profiles")
+	}
+	if pp.Description != "Frontend work" {
+		t.Errorf("description: got %q, want %q", pp.Description, "Frontend work")
+	}
+	if len(pp.MCPs) != 1 || pp.MCPs[0] != "github" {
+		t.Errorf("MCPs: got %v, want [github]", pp.MCPs)
+	}
+	if len(pp.Skills) != 1 || pp.Skills[0] != "reviewer" {
+		t.Errorf("Skills: got %v, want [reviewer]", pp.Skills)
+	}
+	if pp.EnvVars["MODE"] != "dev" {
+		t.Errorf("EnvVars[MODE]: got %q, want %q", pp.EnvVars["MODE"], "dev")
+	}
+}
+
+func TestSaveProjectProfile_NotFound(t *testing.T) {
+	svc, _ := setupService(t)
+	err := svc.SaveProjectProfile("nonexistent", "test", profile.Profile{})
+	if err == nil {
+		t.Fatal("expected error for nonexistent project")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected 'not found' error, got: %v", err)
+	}
+}
+
+func TestSaveProjectProfile_SyncRoundTrip(t *testing.T) {
+	svc, mock := setupService(t)
+
+	// Save a profile to the project.
+	prof := profile.Profile{
+		Name: "light",
+		MCPs: []string{"github"},
+	}
+	if err := svc.SaveProjectProfile("myproject", "light", prof); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.SetActiveProfile("myproject", "light"); err != nil {
+		t.Fatal(err)
+	}
+
+	// Sync should now deploy only github (not qdrant or filesystem).
+	results, err := svc.SyncProject("myproject")
+	if err != nil {
+		t.Fatalf("SyncProject: %v", err)
+	}
+
+	deployed := mock.servers["/tmp/myproject"]
+	if len(deployed) != 1 {
+		t.Fatalf("expected 1 deployed server, got %d", len(deployed))
+	}
+	if _, ok := deployed["github"]; !ok {
+		t.Error("expected github to be deployed")
+	}
+	_ = results
+}

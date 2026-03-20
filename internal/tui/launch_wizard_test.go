@@ -38,7 +38,7 @@ func testProject() *model.Project {
 }
 
 func newTestWizard() LaunchWizardModel {
-	return NewLaunchWizardModel(testProject(), lwModeSequential, testDiscoveredItems(), nil)
+	return NewLaunchWizardModel(testProject(), LWModeSequential, testDiscoveredItems(), nil)
 }
 
 func sendKey(m LaunchWizardModel, key string) LaunchWizardModel {
@@ -255,7 +255,7 @@ func TestLaunchWizardViewEachStep(t *testing.T) {
 }
 
 func TestLaunchWizardEmptyDiscovery(t *testing.T) {
-	m := NewLaunchWizardModel(testProject(), lwModeSequential, &discovery.Items{}, nil)
+	m := NewLaunchWizardModel(testProject(), LWModeSequential, &discovery.Items{}, nil)
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
 	view := m.View()
 	if !strings.Contains(view, "No MCP servers discovered") {
@@ -270,7 +270,7 @@ func TestLaunchWizardWithExistingProfile(t *testing.T) {
 		EnvVars:   map[string]string{"MY_VAR": "val"},
 		Isolation: profile.IsolationWorktree,
 	}
-	m := NewLaunchWizardModel(testProject(), lwModeSequential, testDiscoveredItems(), existing)
+	m := NewLaunchWizardModel(testProject(), LWModeSequential, testDiscoveredItems(), existing)
 	if !m.MCPSelections()["mcp-a"] {
 		t.Error("expected mcp-a pre-selected from existing profile")
 	}
@@ -365,11 +365,11 @@ func TestLaunchWizardCtrlCCancel(t *testing.T) {
 // --- Hub mode tests ---
 
 func TestLaunchWizardHubModeInitial(t *testing.T) {
-	m := NewLaunchWizardModel(testProject(), lwModeHub, testDiscoveredItems(), nil)
+	m := NewLaunchWizardModel(testProject(), LWModeHub, testDiscoveredItems(), nil)
 	if m.Step() != launchStepMCPs {
 		t.Errorf("hub initial step = %d, want MCPs", m.Step())
 	}
-	if m.WizardMode() != lwModeHub {
+	if m.WizardMode() != LWModeHub {
 		t.Error("expected hub mode")
 	}
 	if m.Phase() != phaseSteps {
@@ -378,7 +378,7 @@ func TestLaunchWizardHubModeInitial(t *testing.T) {
 }
 
 func TestLaunchWizardHubTabCycles(t *testing.T) {
-	m := NewLaunchWizardModel(testProject(), lwModeHub, testDiscoveredItems(), nil)
+	m := NewLaunchWizardModel(testProject(), LWModeHub, testDiscoveredItems(), nil)
 	m = sendSpecialKey(m, tea.KeyTab) // MCPs → Skills
 	if m.Step() != launchStepSkills {
 		t.Errorf("after tab step = %d, want Skills", m.Step())
@@ -393,7 +393,7 @@ func TestLaunchWizardHubTabCycles(t *testing.T) {
 }
 
 func TestLaunchWizardHubShiftTab(t *testing.T) {
-	m := NewLaunchWizardModel(testProject(), lwModeHub, testDiscoveredItems(), nil)
+	m := NewLaunchWizardModel(testProject(), LWModeHub, testDiscoveredItems(), nil)
 	// Shift+Tab from MCPs should wrap to Isolation
 	m = sendSpecialKey(m, tea.KeyShiftTab)
 	if m.Step() != launchStepIsolation {
@@ -402,7 +402,7 @@ func TestLaunchWizardHubShiftTab(t *testing.T) {
 }
 
 func TestLaunchWizardHubEdit(t *testing.T) {
-	m := NewLaunchWizardModel(testProject(), lwModeHub, testDiscoveredItems(), nil)
+	m := NewLaunchWizardModel(testProject(), LWModeHub, testDiscoveredItems(), nil)
 	// Toggle an MCP
 	m = sendKey(m, " ") // toggle mcp-a
 	if !m.MCPSelections()["mcp-a"] {
@@ -421,7 +421,7 @@ func TestLaunchWizardHubEdit(t *testing.T) {
 }
 
 func TestLaunchWizardHubEnterToChecklist(t *testing.T) {
-	m := NewLaunchWizardModel(testProject(), lwModeHub, testDiscoveredItems(), nil)
+	m := NewLaunchWizardModel(testProject(), LWModeHub, testDiscoveredItems(), nil)
 	m = sendSpecialKey(m, tea.KeyEnter)
 	if m.Phase() != phaseChecklist {
 		t.Errorf("expected phaseChecklist after enter in hub, got %d", m.Phase())
@@ -429,7 +429,7 @@ func TestLaunchWizardHubEnterToChecklist(t *testing.T) {
 }
 
 func TestLaunchWizardHubViewRenders(t *testing.T) {
-	m := NewLaunchWizardModel(testProject(), lwModeHub, testDiscoveredItems(), nil)
+	m := NewLaunchWizardModel(testProject(), LWModeHub, testDiscoveredItems(), nil)
 	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	view := m.View()
 	// Should show category menu items
@@ -445,7 +445,7 @@ func TestLaunchWizardHubViewRenders(t *testing.T) {
 }
 
 func TestLaunchWizardHubSelectionCounts(t *testing.T) {
-	m := NewLaunchWizardModel(testProject(), lwModeHub, testDiscoveredItems(), nil)
+	m := NewLaunchWizardModel(testProject(), LWModeHub, testDiscoveredItems(), nil)
 	m = sendKey(m, " ") // toggle mcp-a
 	m = sendKey(m, "j")
 	m = sendKey(m, " ") // toggle mcp-b
@@ -458,7 +458,7 @@ func TestLaunchWizardHubSelectionCounts(t *testing.T) {
 }
 
 func TestLaunchWizardHubCancel(t *testing.T) {
-	m := NewLaunchWizardModel(testProject(), lwModeHub, testDiscoveredItems(), nil)
+	m := NewLaunchWizardModel(testProject(), LWModeHub, testDiscoveredItems(), nil)
 	var cmd tea.Cmd
 	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd == nil {
@@ -514,7 +514,7 @@ func TestLaunchWizardChecklistEdit(t *testing.T) {
 	if m.Phase() != phaseSteps {
 		t.Errorf("expected phaseSteps after edit, got %d", m.Phase())
 	}
-	if m.WizardMode() != lwModeHub {
+	if m.WizardMode() != LWModeHub {
 		t.Error("expected hub mode after edit from checklist")
 	}
 }
