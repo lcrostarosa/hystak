@@ -2,3 +2,5 @@ hystak
 dist/
 .ralph/
 .claude/skills/
+coverage.out
+coverage.html

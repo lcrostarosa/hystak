@@ -16,11 +16,11 @@ func newKeyMap() KeyMap {
 			key.WithHelp("q", "quit"),
 		),
 		TabNext: key.NewBinding(
-			key.WithKeys("tab", "right"),
+			key.WithKeys("tab"),
 			key.WithHelp("tab", "next tab"),
 		),
 		TabPrev: key.NewBinding(
-			key.WithKeys("shift+tab", "left"),
+			key.WithKeys("shift+tab"),
 			key.WithHelp("shift+tab", "prev tab"),
 		),
 	}

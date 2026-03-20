@@ -71,3 +71,34 @@ func writeServerFields(b *strings.Builder, srv model.ServerDef, labelStyle lipgl
 		}
 	}
 }
+
+// writeSkillFields renders the fields of a SkillDef into a strings.Builder.
+func writeSkillFields(b *strings.Builder, skill model.SkillDef, labelStyle lipgloss.Style) {
+	if skill.Description != "" {
+		fmt.Fprintf(b, "%s %s\n", labelStyle.Render("Description:"), skill.Description)
+	}
+	fmt.Fprintf(b, "%s %s\n", labelStyle.Render("Source:"), skill.Source)
+}
+
+// writeHookFields renders the fields of a HookDef into a strings.Builder.
+func writeHookFields(b *strings.Builder, hook model.HookDef, labelStyle lipgloss.Style) {
+	fmt.Fprintf(b, "%s %s\n", labelStyle.Render("Event:"), hook.Event)
+	if hook.Matcher != "" {
+		fmt.Fprintf(b, "%s %s\n", labelStyle.Render("Matcher:"), hook.Matcher)
+	}
+	fmt.Fprintf(b, "%s %s\n", labelStyle.Render("Command:"), hook.Command)
+	if hook.Timeout > 0 {
+		fmt.Fprintf(b, "%s %dms\n", labelStyle.Render("Timeout:"), hook.Timeout)
+	}
+}
+
+// writePermissionFields renders the fields of a PermissionRule into a strings.Builder.
+func writePermissionFields(b *strings.Builder, perm model.PermissionRule, labelStyle lipgloss.Style) {
+	fmt.Fprintf(b, "%s %s\n", labelStyle.Render("Rule:"), perm.Rule)
+	fmt.Fprintf(b, "%s %s\n", labelStyle.Render("Type:"), perm.EffectiveType())
+}
+
+// writeTemplateFields renders the fields of a TemplateDef into a strings.Builder.
+func writeTemplateFields(b *strings.Builder, tmpl model.TemplateDef, labelStyle lipgloss.Style) {
+	fmt.Fprintf(b, "%s %s\n", labelStyle.Render("Source:"), tmpl.Source)
+}

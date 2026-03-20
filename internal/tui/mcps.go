@@ -12,33 +12,33 @@ import (
 	"github.com/lcrostarosa/hystak/internal/service"
 )
 
-// serverItem implements list.DefaultItem for the server list.
-type serverItem struct {
+// mcpItem implements list.DefaultItem for the MCP list.
+type mcpItem struct {
 	server       model.ServerDef
-	projectCount int
+	profileCount int
 }
 
-func (i serverItem) Title() string {
-	if i.projectCount > 0 {
-		return fmt.Sprintf("%s ⌂%d", i.server.Name, i.projectCount)
+func (i mcpItem) Title() string {
+	if i.profileCount > 0 {
+		return fmt.Sprintf("%s ⌂%d", i.server.Name, i.profileCount)
 	}
 	return i.server.Name
 }
 
-func (i serverItem) Description() string {
+func (i mcpItem) Description() string {
 	if i.server.Description != "" {
 		return i.server.Description
 	}
 	return string(i.server.Transport)
 }
 
-func (i serverItem) FilterValue() string { return i.server.Name }
+func (i mcpItem) FilterValue() string { return i.server.Name }
 
-// ServerDeletedMsg is sent when a server has been deleted.
-type ServerDeletedMsg struct{ Name string }
+// MCPDeletedMsg is sent when an MCP has been deleted.
+type MCPDeletedMsg struct{ Name string }
 
-// ServersModel is the sub-model for the Servers tab.
-type ServersModel struct {
+// MCPsModel is the sub-model for the MCPs tab.
+type MCPsModel struct {
 	list       list.Model
 	service    *service.Service
 	width      int
@@ -47,9 +47,9 @@ type ServersModel struct {
 	err        error
 }
 
-// NewServersModel creates a new ServersModel.
-func NewServersModel(svc *service.Service) ServersModel {
-	items := buildServerItems(svc)
+// NewMCPsModel creates a new MCPsModel.
+func NewMCPsModel(svc *service.Service) MCPsModel {
+	items := buildMCPItems(svc)
 	delegate := list.NewDefaultDelegate()
 	l := list.New(items, delegate, 0, 0)
 	l.SetShowHelp(false)
@@ -58,63 +58,35 @@ func NewServersModel(svc *service.Service) ServersModel {
 	l.SetFilteringEnabled(true)
 	l.DisableQuitKeybindings()
 
-	return ServersModel{
+	return MCPsModel{
 		list:    l,
 		service: svc,
 	}
 }
 
-func buildServerItems(svc *service.Service) []list.Item {
-	if svc == nil || svc.Registry == nil {
+func buildMCPItems(svc *service.Service) []list.Item {
+	if svc == nil {
 		return nil
 	}
 
-	projectCounts := countProjectRefs(svc)
-	servers := svc.Registry.List()
+	profileCounts := svc.CountServerProfileRefs()
+	servers := svc.ListServers()
 	items := make([]list.Item, len(servers))
 	for i, srv := range servers {
-		items[i] = serverItem{
+		items[i] = mcpItem{
 			server:       srv,
-			projectCount: projectCounts[srv.Name],
+			profileCount: profileCounts[srv.Name],
 		}
 	}
 	return items
 }
 
-func countProjectRefs(svc *service.Service) map[string]int {
-	counts := make(map[string]int)
-	if svc.Projects == nil || svc.Registry == nil {
-		return counts
-	}
-
-	for _, proj := range svc.Projects.List() {
-		seen := make(map[string]bool)
-		for _, tag := range proj.Tags {
-			if names, err := svc.Registry.ExpandTag(tag); err == nil {
-				for _, name := range names {
-					if !seen[name] {
-						seen[name] = true
-						counts[name]++
-					}
-				}
-			}
-		}
-		for _, mcp := range proj.MCPs {
-			if !seen[mcp.Name] {
-				seen[mcp.Name] = true
-				counts[mcp.Name]++
-			}
-		}
-	}
-	return counts
-}
-
-func (m ServersModel) selectedServer() (model.ServerDef, bool) {
+func (m MCPsModel) selectedMCP() (model.ServerDef, bool) {
 	item := m.list.SelectedItem()
 	if item == nil {
 		return model.ServerDef{}, false
 	}
-	si, ok := item.(serverItem)
+	si, ok := item.(mcpItem)
 	if !ok {
 		return model.ServerDef{}, false
 	}
@@ -123,12 +95,12 @@ func (m ServersModel) selectedServer() (model.ServerDef, bool) {
 
 // IsConsuming returns true when the model handles its own input
 // (e.g., filtering or confirming a delete).
-func (m ServersModel) IsConsuming() bool {
+func (m MCPsModel) IsConsuming() bool {
 	return m.list.FilterState() == list.Filtering || m.confirming
 }
 
-// SetSize updates the dimensions available to the servers tab.
-func (m *ServersModel) SetSize(w, h int) {
+// SetSize updates the dimensions available to the MCPs tab.
+func (m *MCPsModel) SetSize(w, h int) {
 	m.width = w
 	m.height = h
 	listWidth := w * 2 / 5
@@ -139,15 +111,15 @@ func (m *ServersModel) SetSize(w, h int) {
 }
 
 // StatusHelp returns context-sensitive help text for the status bar.
-func (m ServersModel) StatusHelp() string {
+func (m MCPsModel) StatusHelp() string {
 	if m.confirming {
 		return "y: confirm delete | n: cancel"
 	}
 	return "a: add | e: edit | d: delete | i: import | /: filter | tab: switch tabs | q: quit"
 }
 
-// Update handles messages for the servers tab.
-func (m ServersModel) Update(msg tea.Msg) (ServersModel, tea.Cmd) {
+// Update handles messages for the MCPs tab.
+func (m MCPsModel) Update(msg tea.Msg) (MCPsModel, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		if m.confirming {
@@ -155,11 +127,10 @@ func (m ServersModel) Update(msg tea.Msg) (ServersModel, tea.Cmd) {
 			case "y", "Y":
 				m.confirming = false
 				m.err = nil
-				if srv, ok := m.selectedServer(); ok {
-					if err := m.service.Registry.Delete(srv.Name); err != nil {
+				if srv, ok := m.selectedMCP(); ok {
+					if err := m.service.DeleteServer(srv.Name); err != nil {
 						m.err = err
 					} else {
-						_ = m.service.SaveRegistry()
 						m.refreshList()
 					}
 				}
@@ -180,12 +151,12 @@ func (m ServersModel) Update(msg tea.Msg) (ServersModel, tea.Cmd) {
 		case "a":
 			return m, func() tea.Msg { return RequestFormMsg{} }
 		case "e":
-			if srv, ok := m.selectedServer(); ok {
+			if srv, ok := m.selectedMCP(); ok {
 				return m, func() tea.Msg { return RequestFormMsg{EditServer: &srv} }
 			}
 			return m, nil
 		case "d":
-			if _, ok := m.selectedServer(); ok {
+			if _, ok := m.selectedMCP(); ok {
 				m.confirming = true
 				m.err = nil
 			}
@@ -200,8 +171,8 @@ func (m ServersModel) Update(msg tea.Msg) (ServersModel, tea.Cmd) {
 	return m, cmd
 }
 
-// View renders the servers tab as a horizontal split: list + detail.
-func (m ServersModel) View() string {
+// View renders the MCPs tab as a horizontal split: list + detail.
+func (m MCPsModel) View() string {
 	if m.width == 0 || m.height == 0 {
 		return ""
 	}
@@ -221,10 +192,10 @@ func (m ServersModel) View() string {
 	return lipgloss.JoinHorizontal(lipgloss.Top, listView, detailView)
 }
 
-func (m ServersModel) renderDetail(width, height int) string {
-	srv, ok := m.selectedServer()
+func (m MCPsModel) renderDetail(width, height int) string {
+	srv, ok := m.selectedMCP()
 	if !ok {
-		return detailPaneStyle.Width(width).Height(height).Render("No server selected")
+		return detailPaneStyle.Width(width).Height(height).Render("No MCP selected")
 	}
 
 	var b strings.Builder
@@ -253,8 +224,8 @@ func (m ServersModel) renderDetail(width, height int) string {
 	return detailPaneStyle.Width(width).Height(height).Render(b.String())
 }
 
-func (m *ServersModel) refreshList() {
-	items := buildServerItems(m.service)
+func (m *MCPsModel) refreshList() {
+	items := buildMCPItems(m.service)
 	m.list.SetItems(items)
 }
 

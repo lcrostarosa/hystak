@@ -88,4 +88,16 @@ var (
 	diffHeaderStyle = lipgloss.NewStyle().
 			Bold(true).
 			Foreground(lipgloss.Color("245"))
+
+	sectionHeaderStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("205")).
+				MarginTop(1)
+
+	sectionActiveStyle = lipgloss.NewStyle().
+				Bold(true).
+				Foreground(lipgloss.Color("205"))
+
+	sectionDimStyle = lipgloss.NewStyle().
+			Foreground(lipgloss.Color("245"))
 )

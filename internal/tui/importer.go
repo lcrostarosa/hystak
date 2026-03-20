@@ -127,7 +127,7 @@ func (m ImportModel) updateInputPath(msg tea.KeyMsg) (ImportModel, tea.Cmd) {
 			return m, nil
 		}
 		if len(candidates) == 0 {
-			m.err = "No servers found in file"
+			m.err = "No MCPs found in file"
 			return m, nil
 		}
 		m.err = ""
@@ -180,7 +180,7 @@ func (m ImportModel) applyPreview() (ImportModel, tea.Cmd) {
 	}
 
 	if len(kept) == 0 {
-		m.err = "No servers selected"
+		m.err = "No MCPs selected"
 		return m, nil
 	}
 
@@ -307,7 +307,7 @@ func (m ImportModel) View() string {
 }
 
 func (m ImportModel) renderInputPath(b *strings.Builder) {
-	b.WriteString(formTitleStyle.Render("Import Servers"))
+	b.WriteString(formTitleStyle.Render("Import MCPs"))
 	b.WriteString("\n\n")
 	b.WriteString(formLabelStyle.Render("Config file path"))
 	b.WriteString("\n")
@@ -323,7 +323,7 @@ func (m ImportModel) renderInputPath(b *strings.Builder) {
 }
 
 func (m ImportModel) renderPreview(b *strings.Builder) {
-	b.WriteString(formTitleStyle.Render("Select Servers to Import"))
+	b.WriteString(formTitleStyle.Render("Select MCPs to Import"))
 	b.WriteString("\n\n")
 
 	for i, c := range m.candidates {
@@ -365,7 +365,7 @@ func (m ImportModel) renderConflict(b *strings.Builder) {
 
 	b.WriteString(formTitleStyle.Render("Resolve Conflict"))
 	b.WriteString("\n\n")
-	b.WriteString(fmt.Sprintf("Server %s already exists in the registry.\n\n",
+	b.WriteString(fmt.Sprintf("MCP %s already exists in the registry.\n\n",
 		detailTitleStyle.Render(c.Name)))
 
 	// Show imported server details.
@@ -375,7 +375,7 @@ func (m ImportModel) renderConflict(b *strings.Builder) {
 	b.WriteString("\n")
 
 	// Show existing server details.
-	if existing, ok := m.service.Registry.Get(c.Name); ok {
+	if existing, ok := m.service.GetServer(c.Name); ok {
 		b.WriteString(formLabelStyle.Render("Existing:"))
 		b.WriteString("\n")
 		b.WriteString(formatServerDetail(existing))

@@ -275,9 +275,9 @@ func (m FormModel) Update(msg tea.Msg) (FormModel, tea.Cmd) {
 func (m FormModel) View() string {
 	var b strings.Builder
 
-	title := "Add Server"
+	title := "Add MCP"
 	if m.isEdit {
-		title = "Edit Server"
+		title = "Edit MCP"
 	}
 	b.WriteString(formTitleStyle.Render(title))
 	b.WriteString("\n\n")

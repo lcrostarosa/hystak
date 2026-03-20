@@ -414,8 +414,8 @@ func TestFormViewContainsTitle(t *testing.T) {
 	m.SetSize(80, 24)
 
 	view := m.View()
-	if !strings.Contains(view, "Add Server") {
-		t.Error("expected 'Add Server' in form view")
+	if !strings.Contains(view, "Add MCP") {
+		t.Error("expected 'Add MCP' in form view")
 	}
 }
 
@@ -425,8 +425,8 @@ func TestFormViewEditTitle(t *testing.T) {
 	m.SetSize(80, 24)
 
 	view := m.View()
-	if !strings.Contains(view, "Edit Server") {
-		t.Error("expected 'Edit Server' in edit form view")
+	if !strings.Contains(view, "Edit MCP") {
+		t.Error("expected 'Edit MCP' in edit form view")
 	}
 }
 
@@ -496,13 +496,13 @@ func TestAppFormSubmitAddsServer(t *testing.T) {
 	}
 
 	// Verify server was added to registry.
-	if _, ok := svc.Registry.Get("new-server"); !ok {
+	if _, ok := svc.GetServer("new-server"); !ok {
 		t.Error("expected new-server to be in registry")
 	}
 
 	// Verify list was refreshed.
-	if len(app.servers.list.Items()) != 3 {
-		t.Errorf("expected 3 items after add, got %d", len(app.servers.list.Items()))
+	if len(app.mcps.list.Items()) != 3 {
+		t.Errorf("expected 3 items after add, got %d", len(app.mcps.list.Items()))
 	}
 }
 
@@ -514,7 +514,7 @@ func TestAppFormSubmitEditsServer(t *testing.T) {
 	app = updated.(AppModel)
 
 	// Open edit form for github.
-	github, _ := svc.Registry.Get("github")
+	github, _ := svc.GetServer("github")
 	updated, _ = app.Update(RequestFormMsg{EditServer: &github})
 	app = updated.(AppModel)
 
@@ -526,7 +526,7 @@ func TestAppFormSubmitEditsServer(t *testing.T) {
 	app = updated.(AppModel)
 
 	// Verify server was updated.
-	srv, ok := svc.Registry.Get("github")
+	srv, ok := svc.GetServer("github")
 	if !ok {
 		t.Fatal("expected github to still exist")
 	}

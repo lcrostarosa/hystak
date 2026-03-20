@@ -46,11 +46,7 @@ func (a *cliApp) newOverrideCmd() *cobra.Command {
 				return fmt.Errorf("at least one override flag required (--env or --args)")
 			}
 
-			if err := a.svc.Projects.SetOverride(projectName, serverName, override); err != nil {
-				return err
-			}
-
-			if err := a.svc.SaveProjects(); err != nil {
+			if err := a.svc.SetOverride(projectName, serverName, override); err != nil {
 				return err
 			}
 

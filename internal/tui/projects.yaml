@@ -7,6 +7,9 @@ projects:
             - core
         mcps:
             - slack
+    newproject:
+        path: /tmp/newproject
+        clients: []
     other:
         path: /tmp/other
         clients: []

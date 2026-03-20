@@ -1,4 +1,17 @@
 servers:
+    github:
+        name: github
+        transport: stdio
+        command: npx
+        args:
+            - -y
+            - '@modelcontextprotocol/server-github'
+        env:
+            GITHUB_TOKEN: ${GITHUB_TOKEN}
+    new-server:
+        name: new-server
+        transport: stdio
+        command: new-cmd
     qdrant:
         name: qdrant
         description: Qdrant vector database

@@ -357,3 +357,809 @@ func TestUpdateTagNotFound(t *testing.T) {
 		t.Fatal("expected not-found error")
 	}
 }
+
+// --- Skills CRUD tests ---
+
+func testSkill(name string) model.SkillDef {
+	return model.SkillDef{
+		Name:        name,
+		Description: name + " skill",
+		Source:      "/path/to/" + name + ".md",
+	}
+}
+
+func TestAddSkill(t *testing.T) {
+	r := empty()
+	skill := testSkill("code-review")
+
+	if err := r.AddSkill(skill); err != nil {
+		t.Fatalf("AddSkill: %v", err)
+	}
+
+	got, ok := r.GetSkill("code-review")
+	if !ok {
+		t.Fatal("skill not found after AddSkill")
+	}
+	if got.Name != "code-review" {
+		t.Errorf("expected Name=code-review, got %q", got.Name)
+	}
+	if got.Description != "code-review skill" {
+		t.Errorf("expected description, got %q", got.Description)
+	}
+	if got.Source != "/path/to/code-review.md" {
+		t.Errorf("expected source path, got %q", got.Source)
+	}
+}
+
+func TestAddSkillDuplicate(t *testing.T) {
+	r := empty()
+	skill := testSkill("code-review")
+	r.AddSkill(skill)
+
+	err := r.AddSkill(skill)
+	if err == nil {
+		t.Fatal("expected duplicate error")
+	}
+}
+
+func TestGetSkill(t *testing.T) {
+	tests := []struct {
+		name      string
+		setup     func(*Registry)
+		query     string
+		wantFound bool
+	}{
+		{
+			name: "existing skill",
+			setup: func(r *Registry) {
+				r.AddSkill(testSkill("code-review"))
+			},
+			query:     "code-review",
+			wantFound: true,
+		},
+		{
+			name:      "non-existent skill",
+			setup:     func(r *Registry) {},
+			query:     "nonexistent",
+			wantFound: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := empty()
+			tt.setup(r)
+
+			_, ok := r.GetSkill(tt.query)
+			if ok != tt.wantFound {
+				t.Errorf("GetSkill(%q) found=%v, want %v", tt.query, ok, tt.wantFound)
+			}
+		})
+	}
+}
+
+func TestListSkills(t *testing.T) {
+	r := empty()
+	r.AddSkill(testSkill("zzz-skill"))
+	r.AddSkill(testSkill("aaa-skill"))
+	r.AddSkill(testSkill("mmm-skill"))
+
+	list := r.ListSkills()
+	if len(list) != 3 {
+		t.Fatalf("expected 3 skills, got %d", len(list))
+	}
+	if list[0].Name != "aaa-skill" || list[1].Name != "mmm-skill" || list[2].Name != "zzz-skill" {
+		t.Errorf("expected sorted order, got %v", []string{list[0].Name, list[1].Name, list[2].Name})
+	}
+}
+
+func TestUpdateSkill(t *testing.T) {
+	r := empty()
+	r.AddSkill(testSkill("code-review"))
+
+	updated := model.SkillDef{
+		Description: "Updated description",
+		Source:      "/new/path.md",
+	}
+	if err := r.UpdateSkill("code-review", updated); err != nil {
+		t.Fatalf("UpdateSkill: %v", err)
+	}
+
+	got, _ := r.GetSkill("code-review")
+	if got.Description != "Updated description" {
+		t.Errorf("expected updated description, got %q", got.Description)
+	}
+	if got.Source != "/new/path.md" {
+		t.Errorf("expected updated source, got %q", got.Source)
+	}
+	if got.Name != "code-review" {
+		t.Errorf("expected name preserved, got %q", got.Name)
+	}
+}
+
+func TestUpdateSkillNotFound(t *testing.T) {
+	r := empty()
+	err := r.UpdateSkill("nonexistent", model.SkillDef{})
+	if err == nil {
+		t.Fatal("expected not-found error")
+	}
+}
+
+func TestDeleteSkill(t *testing.T) {
+	r := empty()
+	r.AddSkill(testSkill("code-review"))
+
+	if err := r.DeleteSkill("code-review"); err != nil {
+		t.Fatalf("DeleteSkill: %v", err)
+	}
+
+	if _, ok := r.GetSkill("code-review"); ok {
+		t.Error("skill still exists after DeleteSkill")
+	}
+}
+
+func TestDeleteSkillNotFound(t *testing.T) {
+	r := empty()
+	err := r.DeleteSkill("nonexistent")
+	if err == nil {
+		t.Fatal("expected not-found error")
+	}
+}
+
+// --- Hooks CRUD tests ---
+
+func testHook(name string) model.HookDef {
+	return model.HookDef{
+		Name:    name,
+		Event:   "PreToolUse",
+		Matcher: "Bash",
+		Command: "/usr/bin/" + name,
+		Timeout: 5000,
+	}
+}
+
+func TestAddHook(t *testing.T) {
+	r := empty()
+	hook := testHook("lint-check")
+
+	if err := r.AddHook(hook); err != nil {
+		t.Fatalf("AddHook: %v", err)
+	}
+
+	got, ok := r.GetHook("lint-check")
+	if !ok {
+		t.Fatal("hook not found after AddHook")
+	}
+	if got.Name != "lint-check" {
+		t.Errorf("expected Name=lint-check, got %q", got.Name)
+	}
+	if got.Event != "PreToolUse" {
+		t.Errorf("expected Event=PreToolUse, got %q", got.Event)
+	}
+	if got.Command != "/usr/bin/lint-check" {
+		t.Errorf("expected command, got %q", got.Command)
+	}
+	if got.Timeout != 5000 {
+		t.Errorf("expected timeout=5000, got %d", got.Timeout)
+	}
+}
+
+func TestAddHookDuplicate(t *testing.T) {
+	r := empty()
+	hook := testHook("lint-check")
+	r.AddHook(hook)
+
+	err := r.AddHook(hook)
+	if err == nil {
+		t.Fatal("expected duplicate error")
+	}
+}
+
+func TestGetHook(t *testing.T) {
+	tests := []struct {
+		name      string
+		setup     func(*Registry)
+		query     string
+		wantFound bool
+	}{
+		{
+			name: "existing hook",
+			setup: func(r *Registry) {
+				r.AddHook(testHook("lint-check"))
+			},
+			query:     "lint-check",
+			wantFound: true,
+		},
+		{
+			name:      "non-existent hook",
+			setup:     func(r *Registry) {},
+			query:     "nonexistent",
+			wantFound: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := empty()
+			tt.setup(r)
+
+			_, ok := r.GetHook(tt.query)
+			if ok != tt.wantFound {
+				t.Errorf("GetHook(%q) found=%v, want %v", tt.query, ok, tt.wantFound)
+			}
+		})
+	}
+}
+
+func TestListHooks(t *testing.T) {
+	r := empty()
+	r.AddHook(testHook("zzz-hook"))
+	r.AddHook(testHook("aaa-hook"))
+	r.AddHook(testHook("mmm-hook"))
+
+	list := r.ListHooks()
+	if len(list) != 3 {
+		t.Fatalf("expected 3 hooks, got %d", len(list))
+	}
+	if list[0].Name != "aaa-hook" || list[1].Name != "mmm-hook" || list[2].Name != "zzz-hook" {
+		t.Errorf("expected sorted order, got %v", []string{list[0].Name, list[1].Name, list[2].Name})
+	}
+}
+
+func TestUpdateHook(t *testing.T) {
+	r := empty()
+	r.AddHook(testHook("lint-check"))
+
+	updated := model.HookDef{
+		Event:   "PostToolUse",
+		Matcher: "WebFetch",
+		Command: "/usr/bin/updated-hook",
+		Timeout: 10000,
+	}
+	if err := r.UpdateHook("lint-check", updated); err != nil {
+		t.Fatalf("UpdateHook: %v", err)
+	}
+
+	got, _ := r.GetHook("lint-check")
+	if got.Event != "PostToolUse" {
+		t.Errorf("expected updated event, got %q", got.Event)
+	}
+	if got.Matcher != "WebFetch" {
+		t.Errorf("expected updated matcher, got %q", got.Matcher)
+	}
+	if got.Command != "/usr/bin/updated-hook" {
+		t.Errorf("expected updated command, got %q", got.Command)
+	}
+	if got.Timeout != 10000 {
+		t.Errorf("expected updated timeout, got %d", got.Timeout)
+	}
+	if got.Name != "lint-check" {
+		t.Errorf("expected name preserved, got %q", got.Name)
+	}
+}
+
+func TestUpdateHookNotFound(t *testing.T) {
+	r := empty()
+	err := r.UpdateHook("nonexistent", model.HookDef{})
+	if err == nil {
+		t.Fatal("expected not-found error")
+	}
+}
+
+func TestDeleteHook(t *testing.T) {
+	r := empty()
+	r.AddHook(testHook("lint-check"))
+
+	if err := r.DeleteHook("lint-check"); err != nil {
+		t.Fatalf("DeleteHook: %v", err)
+	}
+
+	if _, ok := r.GetHook("lint-check"); ok {
+		t.Error("hook still exists after DeleteHook")
+	}
+}
+
+func TestDeleteHookNotFound(t *testing.T) {
+	r := empty()
+	err := r.DeleteHook("nonexistent")
+	if err == nil {
+		t.Fatal("expected not-found error")
+	}
+}
+
+// --- Permissions CRUD tests ---
+
+func testPermission(name string) model.PermissionRule {
+	return model.PermissionRule{
+		Name: name,
+		Rule: "Bash(" + name + ")",
+		Type: "allow",
+	}
+}
+
+func TestAddPermission(t *testing.T) {
+	r := empty()
+	perm := testPermission("bash-all")
+
+	if err := r.AddPermission(perm); err != nil {
+		t.Fatalf("AddPermission: %v", err)
+	}
+
+	got, ok := r.GetPermission("bash-all")
+	if !ok {
+		t.Fatal("permission not found after AddPermission")
+	}
+	if got.Name != "bash-all" {
+		t.Errorf("expected Name=bash-all, got %q", got.Name)
+	}
+	if got.Rule != "Bash(bash-all)" {
+		t.Errorf("expected rule, got %q", got.Rule)
+	}
+	if got.Type != "allow" {
+		t.Errorf("expected type=allow, got %q", got.Type)
+	}
+}
+
+func TestAddPermissionDuplicate(t *testing.T) {
+	r := empty()
+	perm := testPermission("bash-all")
+	r.AddPermission(perm)
+
+	err := r.AddPermission(perm)
+	if err == nil {
+		t.Fatal("expected duplicate error")
+	}
+}
+
+func TestGetPermission(t *testing.T) {
+	tests := []struct {
+		name      string
+		setup     func(*Registry)
+		query     string
+		wantFound bool
+	}{
+		{
+			name: "existing permission",
+			setup: func(r *Registry) {
+				r.AddPermission(testPermission("bash-all"))
+			},
+			query:     "bash-all",
+			wantFound: true,
+		},
+		{
+			name:      "non-existent permission",
+			setup:     func(r *Registry) {},
+			query:     "nonexistent",
+			wantFound: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := empty()
+			tt.setup(r)
+
+			_, ok := r.GetPermission(tt.query)
+			if ok != tt.wantFound {
+				t.Errorf("GetPermission(%q) found=%v, want %v", tt.query, ok, tt.wantFound)
+			}
+		})
+	}
+}
+
+func TestListPermissions(t *testing.T) {
+	r := empty()
+	r.AddPermission(testPermission("zzz-perm"))
+	r.AddPermission(testPermission("aaa-perm"))
+	r.AddPermission(testPermission("mmm-perm"))
+
+	list := r.ListPermissions()
+	if len(list) != 3 {
+		t.Fatalf("expected 3 permissions, got %d", len(list))
+	}
+	if list[0].Name != "aaa-perm" || list[1].Name != "mmm-perm" || list[2].Name != "zzz-perm" {
+		t.Errorf("expected sorted order, got %v", []string{list[0].Name, list[1].Name, list[2].Name})
+	}
+}
+
+func TestUpdatePermission(t *testing.T) {
+	r := empty()
+	r.AddPermission(testPermission("bash-all"))
+
+	updated := model.PermissionRule{
+		Rule: "WebFetch(domain:example.com)",
+		Type: "deny",
+	}
+	if err := r.UpdatePermission("bash-all", updated); err != nil {
+		t.Fatalf("UpdatePermission: %v", err)
+	}
+
+	got, _ := r.GetPermission("bash-all")
+	if got.Rule != "WebFetch(domain:example.com)" {
+		t.Errorf("expected updated rule, got %q", got.Rule)
+	}
+	if got.Type != "deny" {
+		t.Errorf("expected updated type, got %q", got.Type)
+	}
+	if got.Name != "bash-all" {
+		t.Errorf("expected name preserved, got %q", got.Name)
+	}
+}
+
+func TestUpdatePermissionNotFound(t *testing.T) {
+	r := empty()
+	err := r.UpdatePermission("nonexistent", model.PermissionRule{})
+	if err == nil {
+		t.Fatal("expected not-found error")
+	}
+}
+
+func TestDeletePermission(t *testing.T) {
+	r := empty()
+	r.AddPermission(testPermission("bash-all"))
+
+	if err := r.DeletePermission("bash-all"); err != nil {
+		t.Fatalf("DeletePermission: %v", err)
+	}
+
+	if _, ok := r.GetPermission("bash-all"); ok {
+		t.Error("permission still exists after DeletePermission")
+	}
+}
+
+func TestDeletePermissionNotFound(t *testing.T) {
+	r := empty()
+	err := r.DeletePermission("nonexistent")
+	if err == nil {
+		t.Fatal("expected not-found error")
+	}
+}
+
+// --- Templates CRUD tests ---
+
+func testTemplate(name string) model.TemplateDef {
+	return model.TemplateDef{
+		Name:   name,
+		Source: "/templates/" + name + ".md",
+	}
+}
+
+func TestAddTemplate(t *testing.T) {
+	r := empty()
+	tmpl := testTemplate("golang-project")
+
+	if err := r.AddTemplate(tmpl); err != nil {
+		t.Fatalf("AddTemplate: %v", err)
+	}
+
+	got, ok := r.GetTemplate("golang-project")
+	if !ok {
+		t.Fatal("template not found after AddTemplate")
+	}
+	if got.Name != "golang-project" {
+		t.Errorf("expected Name=golang-project, got %q", got.Name)
+	}
+	if got.Source != "/templates/golang-project.md" {
+		t.Errorf("expected source path, got %q", got.Source)
+	}
+}
+
+func TestAddTemplateDuplicate(t *testing.T) {
+	r := empty()
+	tmpl := testTemplate("golang-project")
+	r.AddTemplate(tmpl)
+
+	err := r.AddTemplate(tmpl)
+	if err == nil {
+		t.Fatal("expected duplicate error")
+	}
+}
+
+func TestGetTemplate(t *testing.T) {
+	tests := []struct {
+		name      string
+		setup     func(*Registry)
+		query     string
+		wantFound bool
+	}{
+		{
+			name: "existing template",
+			setup: func(r *Registry) {
+				r.AddTemplate(testTemplate("golang-project"))
+			},
+			query:     "golang-project",
+			wantFound: true,
+		},
+		{
+			name:      "non-existent template",
+			setup:     func(r *Registry) {},
+			query:     "nonexistent",
+			wantFound: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			r := empty()
+			tt.setup(r)
+
+			_, ok := r.GetTemplate(tt.query)
+			if ok != tt.wantFound {
+				t.Errorf("GetTemplate(%q) found=%v, want %v", tt.query, ok, tt.wantFound)
+			}
+		})
+	}
+}
+
+func TestListTemplates(t *testing.T) {
+	r := empty()
+	r.AddTemplate(testTemplate("zzz-template"))
+	r.AddTemplate(testTemplate("aaa-template"))
+	r.AddTemplate(testTemplate("mmm-template"))
+
+	list := r.ListTemplates()
+	if len(list) != 3 {
+		t.Fatalf("expected 3 templates, got %d", len(list))
+	}
+	if list[0].Name != "aaa-template" || list[1].Name != "mmm-template" || list[2].Name != "zzz-template" {
+		t.Errorf("expected sorted order, got %v", []string{list[0].Name, list[1].Name, list[2].Name})
+	}
+}
+
+func TestUpdateTemplate(t *testing.T) {
+	r := empty()
+	r.AddTemplate(testTemplate("golang-project"))
+
+	updated := model.TemplateDef{
+		Source: "/new/templates/updated.md",
+	}
+	if err := r.UpdateTemplate("golang-project", updated); err != nil {
+		t.Fatalf("UpdateTemplate: %v", err)
+	}
+
+	got, _ := r.GetTemplate("golang-project")
+	if got.Source != "/new/templates/updated.md" {
+		t.Errorf("expected updated source, got %q", got.Source)
+	}
+	if got.Name != "golang-project" {
+		t.Errorf("expected name preserved, got %q", got.Name)
+	}
+}
+
+func TestUpdateTemplateNotFound(t *testing.T) {
+	r := empty()
+	err := r.UpdateTemplate("nonexistent", model.TemplateDef{})
+	if err == nil {
+		t.Fatal("expected not-found error")
+	}
+}
+
+func TestDeleteTemplate(t *testing.T) {
+	r := empty()
+	r.AddTemplate(testTemplate("golang-project"))
+
+	if err := r.DeleteTemplate("golang-project"); err != nil {
+		t.Fatalf("DeleteTemplate: %v", err)
+	}
+
+	if _, ok := r.GetTemplate("golang-project"); ok {
+		t.Error("template still exists after DeleteTemplate")
+	}
+}
+
+func TestDeleteTemplateNotFound(t *testing.T) {
+	r := empty()
+	err := r.DeleteTemplate("nonexistent")
+	if err == nil {
+		t.Fatal("expected not-found error")
+	}
+}
+
+// --- Load/Save round-trip test for all entities ---
+
+func TestLoadSaveRoundTripAllEntities(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "registry.yaml")
+
+	// Build a registry with all entity types.
+	r := empty()
+
+	// Servers
+	r.Add(testServer("github"))
+	r.Add(testHTTPServer("remote-api"))
+
+	// Skills
+	r.AddSkill(model.SkillDef{
+		Name:        "code-review",
+		Description: "Reviews code changes",
+		Source:      "/skills/code-review.md",
+	})
+	r.AddSkill(model.SkillDef{
+		Name:        "refactor",
+		Description: "Refactors code",
+		Source:      "/skills/refactor.md",
+	})
+
+	// Hooks
+	r.AddHook(model.HookDef{
+		Name:    "pre-lint",
+		Event:   "PreToolUse",
+		Matcher: "Bash",
+		Command: "/usr/bin/lint",
+		Timeout: 3000,
+	})
+	r.AddHook(model.HookDef{
+		Name:    "post-test",
+		Event:   "PostToolUse",
+		Command: "/usr/bin/report",
+	})
+
+	// Permissions
+	r.AddPermission(model.PermissionRule{
+		Name: "allow-bash",
+		Rule: "Bash(*)",
+		Type: "allow",
+	})
+	r.AddPermission(model.PermissionRule{
+		Name: "deny-web",
+		Rule: "WebFetch(domain:evil.com)",
+		Type: "deny",
+	})
+
+	// Templates
+	r.AddTemplate(model.TemplateDef{
+		Name:   "go-project",
+		Source: "/templates/go-project.md",
+	})
+
+	// Tags
+	r.AddTag("core", []string{"github"})
+	r.AddTag("all", []string{"github", "remote-api"})
+
+	// Save
+	if err := r.Save(path); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	// Load
+	r2, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+
+	// Verify servers
+	if len(r2.Servers) != 2 {
+		t.Fatalf("expected 2 servers, got %d", len(r2.Servers))
+	}
+	gh, ok := r2.Get("github")
+	if !ok {
+		t.Fatal("github server not found after round-trip")
+	}
+	if gh.Command != "npx" {
+		t.Errorf("expected command=npx, got %q", gh.Command)
+	}
+	if gh.Transport != model.TransportStdio {
+		t.Errorf("expected stdio transport, got %q", gh.Transport)
+	}
+
+	remote, ok := r2.Get("remote-api")
+	if !ok {
+		t.Fatal("remote-api server not found after round-trip")
+	}
+	if remote.Transport != model.TransportHTTP {
+		t.Errorf("expected http transport, got %q", remote.Transport)
+	}
+	if remote.URL != "https://example.com/remote-api" {
+		t.Errorf("expected URL, got %q", remote.URL)
+	}
+
+	// Verify skills
+	if len(r2.Skills) != 2 {
+		t.Fatalf("expected 2 skills, got %d", len(r2.Skills))
+	}
+	cr, ok := r2.GetSkill("code-review")
+	if !ok {
+		t.Fatal("code-review skill not found after round-trip")
+	}
+	if cr.Name != "code-review" {
+		t.Errorf("expected skill Name=code-review, got %q", cr.Name)
+	}
+	if cr.Description != "Reviews code changes" {
+		t.Errorf("expected skill description, got %q", cr.Description)
+	}
+	if cr.Source != "/skills/code-review.md" {
+		t.Errorf("expected skill source, got %q", cr.Source)
+	}
+
+	rf, ok := r2.GetSkill("refactor")
+	if !ok {
+		t.Fatal("refactor skill not found after round-trip")
+	}
+	if rf.Source != "/skills/refactor.md" {
+		t.Errorf("expected refactor source, got %q", rf.Source)
+	}
+
+	// Verify hooks
+	if len(r2.Hooks) != 2 {
+		t.Fatalf("expected 2 hooks, got %d", len(r2.Hooks))
+	}
+	pl, ok := r2.GetHook("pre-lint")
+	if !ok {
+		t.Fatal("pre-lint hook not found after round-trip")
+	}
+	if pl.Name != "pre-lint" {
+		t.Errorf("expected hook Name=pre-lint, got %q", pl.Name)
+	}
+	if pl.Event != "PreToolUse" {
+		t.Errorf("expected hook event, got %q", pl.Event)
+	}
+	if pl.Matcher != "Bash" {
+		t.Errorf("expected hook matcher, got %q", pl.Matcher)
+	}
+	if pl.Command != "/usr/bin/lint" {
+		t.Errorf("expected hook command, got %q", pl.Command)
+	}
+	if pl.Timeout != 3000 {
+		t.Errorf("expected hook timeout=3000, got %d", pl.Timeout)
+	}
+
+	pt, ok := r2.GetHook("post-test")
+	if !ok {
+		t.Fatal("post-test hook not found after round-trip")
+	}
+	if pt.Event != "PostToolUse" {
+		t.Errorf("expected post-test event, got %q", pt.Event)
+	}
+
+	// Verify permissions
+	if len(r2.Permissions) != 2 {
+		t.Fatalf("expected 2 permissions, got %d", len(r2.Permissions))
+	}
+	ab, ok := r2.GetPermission("allow-bash")
+	if !ok {
+		t.Fatal("allow-bash permission not found after round-trip")
+	}
+	if ab.Name != "allow-bash" {
+		t.Errorf("expected permission Name=allow-bash, got %q", ab.Name)
+	}
+	if ab.Rule != "Bash(*)" {
+		t.Errorf("expected permission rule, got %q", ab.Rule)
+	}
+	if ab.Type != "allow" {
+		t.Errorf("expected permission type=allow, got %q", ab.Type)
+	}
+
+	dw, ok := r2.GetPermission("deny-web")
+	if !ok {
+		t.Fatal("deny-web permission not found after round-trip")
+	}
+	if dw.Type != "deny" {
+		t.Errorf("expected deny type, got %q", dw.Type)
+	}
+
+	// Verify templates
+	if len(r2.Templates) != 1 {
+		t.Fatalf("expected 1 template, got %d", len(r2.Templates))
+	}
+	gp, ok := r2.GetTemplate("go-project")
+	if !ok {
+		t.Fatal("go-project template not found after round-trip")
+	}
+	if gp.Name != "go-project" {
+		t.Errorf("expected template Name=go-project, got %q", gp.Name)
+	}
+	if gp.Source != "/templates/go-project.md" {
+		t.Errorf("expected template source, got %q", gp.Source)
+	}
+
+	// Verify tags
+	if len(r2.Tags) != 2 {
+		t.Fatalf("expected 2 tags, got %d", len(r2.Tags))
+	}
+	if len(r2.Tags["core"]) != 1 || r2.Tags["core"][0] != "github" {
+		t.Errorf("tag core not preserved: %v", r2.Tags["core"])
+	}
+	if len(r2.Tags["all"]) != 2 {
+		t.Errorf("tag all not preserved: %v", r2.Tags["all"])
+	}
+}

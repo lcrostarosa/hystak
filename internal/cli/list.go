@@ -13,7 +13,7 @@ func (a *cliApp) newListCmd() *cobra.Command {
 		Short: "List registry servers",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			servers := a.svc.Registry.List()
+			servers := a.svc.ListServers()
 			if len(servers) == 0 {
 				fmt.Fprintln(cmd.OutOrStdout(), "No servers in registry.")
 				return nil

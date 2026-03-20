@@ -6,6 +6,14 @@ import (
 	"github.com/lcrostarosa/hystak/internal/model"
 )
 
+// PreflightConflict represents a resource that already exists in the project
+// but was not placed by hystak.
+type PreflightConflict struct {
+	ResourceType string // "skill", "hook", "permission", "claude_md"
+	Name         string
+	ExistingPath string
+}
+
 // Deployer writes and reads MCP server configs for a specific client.
 type Deployer interface {
 	// ClientType returns which client this deployer handles.

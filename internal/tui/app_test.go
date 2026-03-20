@@ -9,8 +9,8 @@ import (
 
 func TestNewApp(t *testing.T) {
 	app := NewApp(nil)
-	if app.activeTab != ServersTab {
-		t.Errorf("expected initial tab to be ServersTab, got %d", app.activeTab)
+	if app.activeTab != ProfilesTab {
+		t.Errorf("expected initial tab to be ProfilesTab, got %d", app.activeTab)
 	}
 	if app.mode != ModeBrowse {
 		t.Errorf("expected initial mode to be ModeBrowse, got %d", app.mode)
@@ -23,22 +23,31 @@ func TestTabSwitchingNext(t *testing.T) {
 	m, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	app = m.(AppModel)
 
-	if app.activeTab != ServersTab {
-		t.Fatalf("expected ServersTab initially, got %d", app.activeTab)
+	if app.activeTab != ProfilesTab {
+		t.Fatalf("expected ProfilesTab initially, got %d", app.activeTab)
 	}
 
-	// Press tab to switch to Projects.
+	// Press tab to switch to MCPs.
 	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyTab}))
 	app = m.(AppModel)
-	if app.activeTab != ProjectsTab {
-		t.Errorf("expected ProjectsTab after tab press, got %d", app.activeTab)
+	if app.activeTab != MCPsTab {
+		t.Errorf("expected MCPsTab after tab press, got %d", app.activeTab)
 	}
 
-	// Press tab again to wrap back to Servers.
+	// Press tab again to switch to Skills.
 	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyTab}))
 	app = m.(AppModel)
-	if app.activeTab != ServersTab {
-		t.Errorf("expected ServersTab after second tab press, got %d", app.activeTab)
+	if app.activeTab != SkillsTab {
+		t.Errorf("expected SkillsTab after second tab press, got %d", app.activeTab)
+	}
+
+	// Advance through all remaining tabs and verify wrap-around.
+	for i := 0; i < int(tabCount)-2; i++ {
+		m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyTab}))
+		app = m.(AppModel)
+	}
+	if app.activeTab != ProfilesTab {
+		t.Errorf("expected ProfilesTab after cycling all tabs, got %d", app.activeTab)
 	}
 }
 
@@ -47,37 +56,11 @@ func TestTabSwitchingPrev(t *testing.T) {
 	m, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	app = m.(AppModel)
 
-	// Press shift+tab to go back (wraps to Projects).
+	// Press shift+tab to go back (wraps to last tab: TemplatesTab).
 	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyShiftTab}))
 	app = m.(AppModel)
-	if app.activeTab != ProjectsTab {
-		t.Errorf("expected ProjectsTab after shift+tab, got %d", app.activeTab)
-	}
-}
-
-func TestTabSwitchingRight(t *testing.T) {
-	app := NewApp(nil)
-	m, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	app = m.(AppModel)
-
-	// Press right arrow to go to next tab.
-	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRight}))
-	app = m.(AppModel)
-	if app.activeTab != ProjectsTab {
-		t.Errorf("expected ProjectsTab after right arrow, got %d", app.activeTab)
-	}
-}
-
-func TestTabSwitchingLeft(t *testing.T) {
-	app := NewApp(nil)
-	m, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	app = m.(AppModel)
-
-	// Press left arrow (wraps to Projects).
-	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyLeft}))
-	app = m.(AppModel)
-	if app.activeTab != ProjectsTab {
-		t.Errorf("expected ProjectsTab after left arrow, got %d", app.activeTab)
+	if app.activeTab != TemplatesTab {
+		t.Errorf("expected TemplatesTab after shift+tab, got %d", app.activeTab)
 	}
 }
 
@@ -113,32 +96,32 @@ func TestCtrlCQuit(t *testing.T) {
 	}
 }
 
-func TestViewServersTab(t *testing.T) {
+func TestViewProfilesTab(t *testing.T) {
 	app := NewApp(nil)
 	m, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	app = m.(AppModel)
 
 	view := app.View()
-	if !strings.Contains(view, "Servers") {
-		t.Errorf("expected view to contain 'Servers' tab label, got:\n%s", view)
+	if !strings.Contains(view, "Profiles") {
+		t.Errorf("expected view to contain 'Profiles' tab label, got:\n%s", view)
 	}
-	if !strings.Contains(view, "Projects") {
-		t.Errorf("expected view to contain 'Projects' tab label, got:\n%s", view)
+	if !strings.Contains(view, "MCPs") {
+		t.Errorf("expected view to contain 'MCPs' tab label, got:\n%s", view)
 	}
 }
 
-func TestViewProjectsTab(t *testing.T) {
+func TestViewMCPsTab(t *testing.T) {
 	app := NewApp(nil)
 	m, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	app = m.(AppModel)
 
-	// Switch to Projects tab.
+	// Switch to MCPs tab.
 	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyTab}))
 	app = m.(AppModel)
 
 	view := app.View()
-	if !strings.Contains(view, "No project selected") {
-		t.Errorf("expected 'No project selected' on projects tab, got:\n%s", view)
+	if !strings.Contains(view, "No MCP selected") {
+		t.Errorf("expected 'No MCP selected' on MCPs tab, got:\n%s", view)
 	}
 }
 
@@ -171,14 +154,14 @@ func TestViewBeforeWindowSize(t *testing.T) {
 	}
 }
 
-func TestStatusBarServersTab(t *testing.T) {
+func TestStatusBarProfilesTab(t *testing.T) {
 	app := NewApp(nil)
 	m, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	app = m.(AppModel)
 
 	view := app.View()
 	if !strings.Contains(view, "d: delete") {
-		t.Errorf("expected servers status help in status bar, got:\n%s", view)
+		t.Errorf("expected profiles status help in status bar, got:\n%s", view)
 	}
 }
 
@@ -187,16 +170,16 @@ func TestWindowSizePropagation(t *testing.T) {
 	m, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
 	app = m.(AppModel)
 
-	if app.servers.width != 100 {
-		t.Errorf("expected servers width 100, got %d", app.servers.width)
+	if app.mcps.width != 100 {
+		t.Errorf("expected mcps width 100, got %d", app.mcps.width)
 	}
-	if app.servers.height == 0 {
-		t.Errorf("expected servers height > 0, got %d", app.servers.height)
+	if app.mcps.height == 0 {
+		t.Errorf("expected mcps height > 0, got %d", app.mcps.height)
 	}
-	if app.projects.width != 100 {
-		t.Errorf("expected projects width 100, got %d", app.projects.width)
+	if app.profiles.width != 100 {
+		t.Errorf("expected profiles width 100, got %d", app.profiles.width)
 	}
-	if app.projects.height == 0 {
-		t.Errorf("expected projects height > 0, got %d", app.projects.height)
+	if app.profiles.height == 0 {
+		t.Errorf("expected profiles height > 0, got %d", app.profiles.height)
 	}
 }

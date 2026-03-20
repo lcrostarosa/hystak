@@ -53,6 +53,12 @@ hystak sync --all                    # deploy servers for all projects
 hystak import <path>                 # import servers from a client config file
 hystak override <project> <server>   # set per-project overrides
 hystak diff <project>                # show drift as unified diff
+hystak backup <project>              # back up client configs for a project
+hystak backup --all                  # back up all projects
+hystak backup --list [project]       # list backups (all or per-project)
+hystak restore <project>             # interactively restore a backup
+hystak restore <project> --index 0   # restore most recent (non-interactive)
+hystak restore --global              # restore a global-scope backup
 hystak version                       # print version info
 ```
 
@@ -102,6 +108,18 @@ Servers are resolved by expanding tags, collecting individual assignments, dedup
 ## Tech Stack
 
 Go, [Cobra](https://github.com/spf13/cobra), [Bubble Tea](https://github.com/charmbracelet/bubbletea) + [Bubbles](https://github.com/charmbracelet/bubbles) + [Lip Gloss](https://github.com/charmbracelet/lipgloss), [yaml.v3](https://pkg.go.dev/gopkg.in/yaml.v3)
+
+## Development
+
+### Build & Test
+
+```bash
+make build               # build binary
+make test                # run all tests
+make test-cover          # run tests with coverage report
+make cover-html          # generate HTML coverage report
+make lint                # run golangci-lint
+```
 
 ## License
 
