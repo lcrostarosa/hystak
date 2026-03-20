@@ -8,11 +8,30 @@ import (
 
 // Project represents a registered project with its server assignments.
 type Project struct {
-	Name    string          `yaml:"-"`
-	Path    string          `yaml:"path"`
-	Clients []ClientType    `yaml:"clients"`
-	Tags    []string        `yaml:"tags,omitempty"`
-	MCPs    []MCPAssignment `yaml:"mcps,omitempty"`
+	Name          string                   `yaml:"-"`
+	Path          string                   `yaml:"path"`
+	Clients       []ClientType             `yaml:"clients"`
+	Tags          []string                 `yaml:"tags,omitempty"`
+	MCPs          []MCPAssignment          `yaml:"mcps,omitempty"`
+	Skills        []string                 `yaml:"skills,omitempty"`
+	Hooks         []string                 `yaml:"hooks,omitempty"`
+	Permissions   []string                 `yaml:"permissions,omitempty"`
+	ClaudeMD      string                   `yaml:"claude_md,omitempty"`
+	Profiles      map[string]ProjectProfile `yaml:"profiles,omitempty"`
+	ActiveProfile string                   `yaml:"active_profile,omitempty"`
+	Launched      bool                     `yaml:"launched,omitempty"`
+}
+
+// ProjectProfile is a profile stored inline in a project config.
+type ProjectProfile struct {
+	Description string            `yaml:"description,omitempty"`
+	MCPs        []string          `yaml:"mcps,omitempty"`
+	Skills      []string          `yaml:"skills,omitempty"`
+	Hooks       []string          `yaml:"hooks,omitempty"`
+	Permissions []string          `yaml:"permissions,omitempty"`
+	EnvVars     map[string]string `yaml:"env,omitempty"`
+	ClaudeMD    string            `yaml:"claude_md,omitempty"`
+	Isolation   string            `yaml:"isolation,omitempty"`
 }
 
 // MCPAssignment represents a server assigned to a project,
