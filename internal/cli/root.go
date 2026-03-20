@@ -23,14 +23,29 @@ func newRootCmd(version, commit, date string) *cobra.Command {
 	app := &cliApp{}
 
 	root := &cobra.Command{
-		Use:   "hystak",
-		Short: "MCP server configuration manager",
-		Long:  "hystak manages MCP server configurations from a central registry and deploys them to MCP client config files.",
+		Use:   "hystak [-- claude-args...]",
+		Short: "Claude Code launcher with profile management",
+		Long: `hystak manages MCP server configurations, skills, hooks, and permissions
+from a central registry, syncs them to client config files, and launches
+Claude Code with the selected profile.
+
+Run with no arguments to pick a profile interactively, or use subcommands
+for non-interactive workflows.
+
+Arguments after -- are forwarded to the claude process.`,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if cfgDir == "" {
 				cfgDir = config.ConfigDir()
 			}
-			if err := os.MkdirAll(cfgDir, 0o755); err != nil {
+
+			// Migrate from legacy ~/.config/hystak/ if needed.
+			if warning, err := config.Migrate(); err != nil {
+				return fmt.Errorf("config migration: %w", err)
+			} else if warning != "" {
+				fmt.Fprintln(cmd.ErrOrStderr(), warning)
+			}
+
+			if err := config.EnsureConfigDir(); err != nil {
 				return fmt.Errorf("creating config directory: %w", err)
 			}
 			var err error
@@ -41,18 +56,60 @@ func newRootCmd(version, commit, date string) *cobra.Command {
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Split args at -- separator.
+			var extraArgs []string
+			if dashAt := cmd.ArgsLenAtDash(); dashAt >= 0 {
+				extraArgs = args[dashAt:]
+				args = args[:dashAt]
+			}
+
 			if !isatty.IsTerminal(os.Stdout.Fd()) && !isatty.IsCygwinTerminal(os.Stdout.Fd()) {
 				return cmd.Help()
 			}
-			m := tui.NewApp(app.svc)
-			p := tea.NewProgram(m, tea.WithAltScreen())
-			_, err := p.Run()
-			return err
+
+			// First-time setup wizard.
+			if app.svc.IsEmpty() {
+				wizard := tui.NewWizardModel(app.svc)
+				wp := tea.NewProgram(wizard, tea.WithAltScreen())
+				if _, err := wp.Run(); err != nil {
+					return err
+				}
+			}
+
+			// Show picker.
+			picker := tui.NewPickerModel(app.svc)
+			p := tea.NewProgram(picker, tea.WithAltScreen())
+			result, err := p.Run()
+			if err != nil {
+				return err
+			}
+
+			pickerResult := result.(tui.PickerModel).Result()
+			if pickerResult == nil {
+				// User cancelled.
+				return nil
+			}
+
+			if pickerResult.Manage {
+				// Launch full management TUI.
+				m := tui.NewApp(app.svc)
+				mp := tea.NewProgram(m, tea.WithAltScreen())
+				_, err := mp.Run()
+				return err
+			}
+
+			if pickerResult.Project == nil {
+				// Launch without profile.
+				return launchBare(extraArgs)
+			}
+
+			// Sync and launch selected project.
+			return app.syncAndLaunch(cmd, *pickerResult.Project, extraArgs, false, false)
 		},
 		SilenceUsage: true,
 	}
 
-	root.PersistentFlags().StringVar(&cfgDir, "config-dir", "", "config directory (default: ~/.config/hystak)")
+	root.PersistentFlags().StringVar(&cfgDir, "config-dir", "", "config directory (default: ~/.hystak)")
 
 	root.AddCommand(app.newListCmd())
 	root.AddCommand(app.newSyncCmd())
@@ -60,6 +117,10 @@ func newRootCmd(version, commit, date string) *cobra.Command {
 	root.AddCommand(app.newOverrideCmd())
 	root.AddCommand(app.newDiffCmd())
 	root.AddCommand(app.newRunCmd())
+	root.AddCommand(app.newBackupCmd())
+	root.AddCommand(app.newRestoreCmd())
+	root.AddCommand(app.newManageCmd())
+	root.AddCommand(app.newSetupCmd())
 	root.AddCommand(newVersionCmd(version, commit, date))
 
 	return root
