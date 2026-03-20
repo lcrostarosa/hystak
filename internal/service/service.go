@@ -199,6 +199,33 @@ func (s *Service) SyncProfile(projectName, profileName string) ([]SyncResult, er
 	return s.syncWithConfig(proj, cfg)
 }
 
+// SyncProjectToPath syncs a project but deploys to the specified path instead of proj.Path.
+// This is used for worktree isolation where configs are deployed to a worktree directory.
+func (s *Service) SyncProjectToPath(projectName, deployPath string) ([]SyncResult, error) {
+	proj, ok := s.projects.Get(projectName)
+	if !ok {
+		return nil, hysterr.ProjectNotFound(projectName)
+	}
+
+	if proj.ActiveProfile == "" && hasAssignments(proj) {
+		if err := s.migrateToDefaultProfile(projectName); err != nil {
+			return nil, fmt.Errorf("migrating project %q to profile: %w", projectName, err)
+		}
+		proj, _ = s.projects.Get(projectName)
+	}
+
+	// Override the deploy path. syncWithConfig takes proj by value,
+	// so this only affects this sync call.
+	proj.Path = deployPath
+
+	cfg, err := s.resolveEffectiveConfig(proj)
+	if err != nil {
+		return nil, err
+	}
+
+	return s.syncWithConfig(proj, cfg)
+}
+
 // resolveEffectiveConfig determines the config to deploy based on the active profile
 // or falls back to direct project assignments.
 func (s *Service) resolveEffectiveConfig(proj model.Project) (effectiveConfig, error) {

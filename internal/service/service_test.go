@@ -1624,3 +1624,42 @@ func TestSaveProjectProfile_SyncRoundTrip(t *testing.T) {
 	}
 	_ = results
 }
+
+func TestSyncProjectToPath_DeploysToAlternatePath(t *testing.T) {
+	svc, mock := setupService(t)
+
+	altPath := t.TempDir()
+
+	results, err := svc.SyncProjectToPath("myproject", altPath)
+	if err != nil {
+		t.Fatalf("SyncProjectToPath: %v", err)
+	}
+
+	// Servers should be deployed to the alternate path, not the project's original path.
+	deployed := mock.servers[altPath]
+	if len(deployed) == 0 {
+		t.Fatal("expected servers deployed to alternate path")
+	}
+
+	// Original path should not have any servers (mock starts empty).
+	origDeployed := mock.servers["/tmp/myproject"]
+	if len(origDeployed) > 0 {
+		t.Fatal("should not deploy to original project path")
+	}
+
+	// Should have the expected servers (github, filesystem, qdrant from tag expansion + MCPs).
+	if _, ok := deployed["github"]; !ok {
+		t.Error("expected github deployed to alt path")
+	}
+
+	_ = results
+}
+
+func TestSyncProjectToPath_ProjectNotFound(t *testing.T) {
+	svc, _ := setupService(t)
+
+	_, err := svc.SyncProjectToPath("nonexistent", "/tmp/alt")
+	if err == nil {
+		t.Fatal("expected error for nonexistent project")
+	}
+}

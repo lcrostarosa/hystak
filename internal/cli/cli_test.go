@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/lcrostarosa/hystak/internal/model"
+	"github.com/lcrostarosa/hystak/internal/profile"
 	"github.com/spf13/cobra"
 )
 
@@ -616,5 +618,65 @@ func TestSyncCommandProfileFlagHelpText(t *testing.T) {
 	flag := syncCmd.Flags().Lookup("profile")
 	if flag == nil {
 		t.Fatal("expected --profile flag on sync command")
+	}
+}
+
+// ---- Isolation tests ----
+
+func TestGetIsolation_None(t *testing.T) {
+	proj := model.Project{Name: "test"}
+	if got := getIsolation(proj); got != profile.IsolationNone {
+		t.Fatalf("expected none, got %s", got)
+	}
+}
+
+func TestGetIsolation_NoActiveProfile(t *testing.T) {
+	proj := model.Project{
+		Name: "test",
+		Profiles: map[string]model.ProjectProfile{
+			"dev": {Isolation: "worktree"},
+		},
+	}
+	if got := getIsolation(proj); got != profile.IsolationNone {
+		t.Fatalf("expected none without active profile, got %s", got)
+	}
+}
+
+func TestGetIsolation_Worktree(t *testing.T) {
+	proj := model.Project{
+		Name:          "test",
+		ActiveProfile: "dev",
+		Profiles: map[string]model.ProjectProfile{
+			"dev": {Isolation: "worktree"},
+		},
+	}
+	if got := getIsolation(proj); got != profile.IsolationWorktree {
+		t.Fatalf("expected worktree, got %s", got)
+	}
+}
+
+func TestGetIsolation_Lock(t *testing.T) {
+	proj := model.Project{
+		Name:          "test",
+		ActiveProfile: "dev",
+		Profiles: map[string]model.ProjectProfile{
+			"dev": {Isolation: "lock"},
+		},
+	}
+	if got := getIsolation(proj); got != profile.IsolationLock {
+		t.Fatalf("expected lock, got %s", got)
+	}
+}
+
+func TestGetIsolation_UnknownFallsToNone(t *testing.T) {
+	proj := model.Project{
+		Name:          "test",
+		ActiveProfile: "dev",
+		Profiles: map[string]model.ProjectProfile{
+			"dev": {Isolation: "unknown"},
+		},
+	}
+	if got := getIsolation(proj); got != profile.IsolationNone {
+		t.Fatalf("expected none for unknown strategy, got %s", got)
 	}
 }
