@@ -51,10 +51,23 @@ func sendSpecialKey(m LaunchWizardModel, kt tea.KeyType) LaunchWizardModel {
 	return m
 }
 
+// advanceToChecklist walks through all sequential steps to reach the checklist phase.
+func advanceToChecklist(m LaunchWizardModel) LaunchWizardModel {
+	for i := 0; i < int(launchStepCount); i++ {
+		m = sendSpecialKey(m, tea.KeyEnter)
+	}
+	return m
+}
+
+// --- Sequential mode tests ---
+
 func TestLaunchWizardInitialStep(t *testing.T) {
 	m := newTestWizard()
 	if m.Step() != launchStepMCPs {
 		t.Errorf("initial step = %d, want %d", m.Step(), launchStepMCPs)
+	}
+	if m.Phase() != phaseSteps {
+		t.Errorf("initial phase = %d, want phaseSteps", m.Phase())
 	}
 }
 
@@ -170,34 +183,30 @@ func TestLaunchWizardIsolationStep(t *testing.T) {
 	}
 }
 
+func TestLaunchWizardSequentialToChecklist(t *testing.T) {
+	m := newTestWizard()
+	m = advanceToChecklist(m)
+	if m.Phase() != phaseChecklist {
+		t.Errorf("expected phaseChecklist after walking all steps, got %d", m.Phase())
+	}
+}
+
 func TestLaunchWizardCompleteMsg(t *testing.T) {
 	m := newTestWizard()
-	// Select one MCP
 	m = sendKey(m, " ") // toggle mcp-a
-	// Walk through all steps
-	for i := 0; i < int(launchStepCount); i++ {
-		m = sendSpecialKey(m, tea.KeyEnter)
-	}
+	m = advanceToChecklist(m)
 
-	// On the last step, enter should have emitted the complete message
-	// Since we went past the last step with enter, the cmd should contain the message
-	// Re-do: go to last step and press enter
-	m2 := newTestWizard()
-	m2 = sendKey(m2, " ") // toggle mcp-a
-	for i := 0; i < int(launchStepCount)-1; i++ {
-		m2 = sendSpecialKey(m2, tea.KeyEnter)
-	}
-	// Now at the last step (isolation), press enter to complete
+	// Now in checklist, press enter to launch
 	var cmd tea.Cmd
-	m2, cmd = m2.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("expected a command from completing the wizard")
 	}
 	msg := cmd()
-	if _, ok := msg.(LaunchWizardCompleteMsg); !ok {
+	complete, ok := msg.(LaunchWizardCompleteMsg)
+	if !ok {
 		t.Errorf("expected LaunchWizardCompleteMsg, got %T", msg)
 	}
-	complete := msg.(LaunchWizardCompleteMsg)
 	if !complete.Launch {
 		t.Error("expected Launch to be true")
 	}
@@ -256,9 +265,9 @@ func TestLaunchWizardEmptyDiscovery(t *testing.T) {
 
 func TestLaunchWizardWithExistingProfile(t *testing.T) {
 	existing := &profile.Profile{
-		MCPs:   []string{"mcp-a"},
-		Skills: []string{"skill-2"},
-		EnvVars: map[string]string{"MY_VAR": "val"},
+		MCPs:      []string{"mcp-a"},
+		Skills:    []string{"skill-2"},
+		EnvVars:   map[string]string{"MY_VAR": "val"},
 		Isolation: profile.IsolationWorktree,
 	}
 	m := NewLaunchWizardModel(testProject(), lwModeSequential, testDiscoveredItems(), existing)
@@ -322,11 +331,11 @@ func TestVisibleRange(t *testing.T) {
 		cursor, total, max int
 		wantStart, wantEnd int
 	}{
-		{0, 5, 10, 0, 5},       // all visible
-		{0, 20, 10, 0, 10},     // start at top
-		{15, 20, 10, 10, 20},   // near bottom
-		{10, 20, 10, 5, 15},    // in middle
-		{19, 20, 10, 10, 20},   // at end
+		{0, 5, 10, 0, 5},     // all visible
+		{0, 20, 10, 0, 10},   // start at top
+		{15, 20, 10, 10, 20}, // near bottom
+		{10, 20, 10, 5, 15},  // in middle
+		{19, 20, 10, 10, 20}, // at end
 	}
 	for _, tt := range tests {
 		start, end := visibleRange(tt.cursor, tt.total, tt.max)
@@ -350,6 +359,282 @@ func TestLaunchWizardCtrlCCancel(t *testing.T) {
 	msg := cmd()
 	if _, ok := msg.(LaunchWizardCancelledMsg); !ok {
 		t.Errorf("expected LaunchWizardCancelledMsg from ctrl+c, got %T", msg)
+	}
+}
+
+// --- Hub mode tests ---
+
+func TestLaunchWizardHubModeInitial(t *testing.T) {
+	m := NewLaunchWizardModel(testProject(), lwModeHub, testDiscoveredItems(), nil)
+	if m.Step() != launchStepMCPs {
+		t.Errorf("hub initial step = %d, want MCPs", m.Step())
+	}
+	if m.WizardMode() != lwModeHub {
+		t.Error("expected hub mode")
+	}
+	if m.Phase() != phaseSteps {
+		t.Errorf("expected phaseSteps, got %d", m.Phase())
+	}
+}
+
+func TestLaunchWizardHubTabCycles(t *testing.T) {
+	m := NewLaunchWizardModel(testProject(), lwModeHub, testDiscoveredItems(), nil)
+	m = sendSpecialKey(m, tea.KeyTab) // MCPs → Skills
+	if m.Step() != launchStepSkills {
+		t.Errorf("after tab step = %d, want Skills", m.Step())
+	}
+	// Tab all the way around
+	for i := 0; i < int(launchStepCount)-1; i++ {
+		m = sendSpecialKey(m, tea.KeyTab)
+	}
+	if m.Step() != launchStepMCPs {
+		t.Errorf("tab should wrap around to MCPs, got %d", m.Step())
+	}
+}
+
+func TestLaunchWizardHubShiftTab(t *testing.T) {
+	m := NewLaunchWizardModel(testProject(), lwModeHub, testDiscoveredItems(), nil)
+	// Shift+Tab from MCPs should wrap to Isolation
+	m = sendSpecialKey(m, tea.KeyShiftTab)
+	if m.Step() != launchStepIsolation {
+		t.Errorf("shift+tab from MCPs should wrap to Isolation, got %d", m.Step())
+	}
+}
+
+func TestLaunchWizardHubEdit(t *testing.T) {
+	m := NewLaunchWizardModel(testProject(), lwModeHub, testDiscoveredItems(), nil)
+	// Toggle an MCP
+	m = sendKey(m, " ") // toggle mcp-a
+	if !m.MCPSelections()["mcp-a"] {
+		t.Error("expected mcp-a selected in hub mode")
+	}
+	// Switch to skills
+	m = sendSpecialKey(m, tea.KeyTab)
+	m = sendKey(m, " ") // toggle skill-1
+	if !m.SkillSelections()["skill-1"] {
+		t.Error("expected skill-1 selected in hub mode")
+	}
+	// MCP selection should be preserved
+	if !m.MCPSelections()["mcp-a"] {
+		t.Error("expected mcp-a selection preserved after switching category")
+	}
+}
+
+func TestLaunchWizardHubEnterToChecklist(t *testing.T) {
+	m := NewLaunchWizardModel(testProject(), lwModeHub, testDiscoveredItems(), nil)
+	m = sendSpecialKey(m, tea.KeyEnter)
+	if m.Phase() != phaseChecklist {
+		t.Errorf("expected phaseChecklist after enter in hub, got %d", m.Phase())
+	}
+}
+
+func TestLaunchWizardHubViewRenders(t *testing.T) {
+	m := NewLaunchWizardModel(testProject(), lwModeHub, testDiscoveredItems(), nil)
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	view := m.View()
+	// Should show category menu items
+	for _, label := range []string{"MCPs", "Skills", "Permissions", "Hooks", "Isolation"} {
+		if !strings.Contains(view, label) {
+			t.Errorf("hub view should contain %q", label)
+		}
+	}
+	// Should show MCP items in content pane (MCPs is default step)
+	if !strings.Contains(view, "mcp-a") {
+		t.Error("hub view should show MCP items in content pane")
+	}
+}
+
+func TestLaunchWizardHubSelectionCounts(t *testing.T) {
+	m := NewLaunchWizardModel(testProject(), lwModeHub, testDiscoveredItems(), nil)
+	m = sendKey(m, " ") // toggle mcp-a
+	m = sendKey(m, "j")
+	m = sendKey(m, " ") // toggle mcp-b
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
+	view := m.View()
+	// The hub menu should show the count for MCPs
+	if !strings.Contains(view, "(2)") {
+		t.Error("hub should show (2) for MCPs with 2 selected")
+	}
+}
+
+func TestLaunchWizardHubCancel(t *testing.T) {
+	m := NewLaunchWizardModel(testProject(), lwModeHub, testDiscoveredItems(), nil)
+	var cmd tea.Cmd
+	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd == nil {
+		t.Fatal("expected command from esc in hub mode")
+	}
+	msg := cmd()
+	if _, ok := msg.(LaunchWizardCancelledMsg); !ok {
+		t.Errorf("expected LaunchWizardCancelledMsg, got %T", msg)
+	}
+}
+
+// --- Checklist tests ---
+
+func TestLaunchWizardChecklistViewRenders(t *testing.T) {
+	m := newTestWizard()
+	m.mcpSelections["mcp-a"] = true
+	m.skillSelections["skill-1"] = true
+	m.phase = phaseChecklist
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	view := m.View()
+	if !strings.Contains(view, "mcp-a") {
+		t.Error("checklist should show selected MCP 'mcp-a'")
+	}
+	if !strings.Contains(view, "skill-1") {
+		t.Error("checklist should show selected skill 'skill-1'")
+	}
+	if !strings.Contains(view, "launch") {
+		t.Error("checklist should show 'launch' hint")
+	}
+}
+
+func TestLaunchWizardChecklistAccuracy(t *testing.T) {
+	m := newTestWizard()
+	m.mcpSelections["mcp-a"] = true
+	m.mcpSelections["mcp-c"] = true
+	m.skillSelections["skill-2"] = true
+	m.hookSelections["hook-pre-tool"] = true
+	m.isolation = profile.IsolationWorktree
+	m.phase = phaseChecklist
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	view := m.View()
+	for _, name := range []string{"mcp-a", "mcp-c", "skill-2", "hook-pre-tool", "worktree"} {
+		if !strings.Contains(view, name) {
+			t.Errorf("checklist should contain %q", name)
+		}
+	}
+}
+
+func TestLaunchWizardChecklistEdit(t *testing.T) {
+	m := newTestWizard()
+	m = advanceToChecklist(m)
+	m = sendKey(m, "e")
+	if m.Phase() != phaseSteps {
+		t.Errorf("expected phaseSteps after edit, got %d", m.Phase())
+	}
+	if m.WizardMode() != lwModeHub {
+		t.Error("expected hub mode after edit from checklist")
+	}
+}
+
+func TestLaunchWizardChecklistCancel(t *testing.T) {
+	m := newTestWizard()
+	m = advanceToChecklist(m)
+	var cmd tea.Cmd
+	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd == nil {
+		t.Fatal("expected command from esc on checklist")
+	}
+	msg := cmd()
+	if _, ok := msg.(LaunchWizardCancelledMsg); !ok {
+		t.Errorf("expected LaunchWizardCancelledMsg, got %T", msg)
+	}
+}
+
+func TestLaunchWizardChecklistLaunchCtrlL(t *testing.T) {
+	m := newTestWizard()
+	m.mcpSelections["mcp-b"] = true
+	m = advanceToChecklist(m)
+	var cmd tea.Cmd
+	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlL})
+	if cmd == nil {
+		t.Fatal("expected command from ctrl+l on checklist")
+	}
+	msg := cmd()
+	complete, ok := msg.(LaunchWizardCompleteMsg)
+	if !ok {
+		t.Fatalf("expected LaunchWizardCompleteMsg, got %T", msg)
+	}
+	if !containsString(complete.Profile.MCPs, "mcp-b") {
+		t.Error("expected profile to contain mcp-b")
+	}
+}
+
+func TestLaunchWizardChecklistEditPreservesSelections(t *testing.T) {
+	m := newTestWizard()
+	m = sendKey(m, " ") // toggle mcp-a
+	m = advanceToChecklist(m)
+	m = sendKey(m, "e") // back to hub
+	if !m.MCPSelections()["mcp-a"] {
+		t.Error("expected mcp-a selection preserved after checklist → edit")
+	}
+}
+
+func TestLaunchWizardChecklistEmptySelections(t *testing.T) {
+	m := newTestWizard()
+	m.phase = phaseChecklist
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	view := m.View()
+	// All sections should show (none)
+	if strings.Count(view, "(none)") < 4 {
+		t.Error("checklist with no selections should show (none) for empty categories")
+	}
+}
+
+func TestLaunchWizardChecklistShowsEnvVars(t *testing.T) {
+	m := newTestWizard()
+	m.envKeys = []string{"API_KEY"}
+	m.envValues = []string{"secret123"}
+	m.phase = phaseChecklist
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	view := m.View()
+	if !strings.Contains(view, "API_KEY=secret123") {
+		t.Error("checklist should show env vars")
+	}
+}
+
+func TestLaunchWizardChecklistShowsClaudeMD(t *testing.T) {
+	m := newTestWizard()
+	m.claudeMDOptions = append(m.claudeMDOptions, "my-template.md")
+	m.claudeMDChoice = 1
+	m.phase = phaseChecklist
+	m, _ = m.Update(tea.WindowSizeMsg{Width: 80, Height: 40})
+	view := m.View()
+	if !strings.Contains(view, "my-template.md") {
+		t.Error("checklist should show selected CLAUDE.md template")
+	}
+}
+
+// --- Helper tests ---
+
+func TestCountSelected(t *testing.T) {
+	sel := map[string]bool{"a": true, "b": false, "c": true}
+	if got := countSelected(sel); got != 2 {
+		t.Errorf("countSelected = %d, want 2", got)
+	}
+	if got := countSelected(nil); got != 0 {
+		t.Errorf("countSelected(nil) = %d, want 0", got)
+	}
+}
+
+func TestSelectedNames(t *testing.T) {
+	m := newTestWizard()
+	m.mcpSelections["mcp-c"] = true
+	m.mcpSelections["mcp-a"] = true
+	names := m.selectedNames(m.mcpSelections)
+	if len(names) != 2 {
+		t.Fatalf("expected 2 names, got %d", len(names))
+	}
+	// Should be sorted
+	if names[0] != "mcp-a" || names[1] != "mcp-c" {
+		t.Errorf("expected sorted [mcp-a, mcp-c], got %v", names)
+	}
+}
+
+func TestSelectionSummary(t *testing.T) {
+	m := newTestWizard()
+	m.mcpSelections["mcp-a"] = true
+	m.mcpSelections["mcp-b"] = true
+	if got := m.selectionSummary(launchStepMCPs); got != "(2)" {
+		t.Errorf("MCP summary = %q, want %q", got, "(2)")
+	}
+	if got := m.selectionSummary(launchStepClaudeMD); got != "(none)" {
+		t.Errorf("CLAUDE.md summary = %q, want %q", got, "(none)")
+	}
+	if got := m.selectionSummary(launchStepIsolation); got != "none" {
+		t.Errorf("isolation summary = %q, want %q", got, "none")
 	}
 }
 

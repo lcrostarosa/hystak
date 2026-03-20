@@ -2,6 +2,7 @@ package tui
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -43,6 +44,14 @@ const (
 	lwModeHub                                // on-demand: jump to any category
 )
 
+// wizardPhase tracks the high-level phase of the wizard.
+type wizardPhase int
+
+const (
+	phaseSteps     wizardPhase = iota // editing categories (sequential or hub)
+	phaseChecklist                    // review & confirm
+)
+
 // RequestLaunchWizardMsg triggers the launch wizard overlay.
 type RequestLaunchWizardMsg struct {
 	Project     *model.Project
@@ -64,6 +73,7 @@ type LaunchWizardCancelledMsg struct{}
 type LaunchWizardModel struct {
 	project    *model.Project
 	mode       launchWizardMode
+	phase      wizardPhase
 	step       launchStep
 	discovered *discovery.Items
 	width      int
@@ -73,10 +83,10 @@ type LaunchWizardModel struct {
 	cursors [launchStepCount]int
 
 	// Selections (keyed by item name)
-	mcpSelections  map[string]bool
+	mcpSelections   map[string]bool
 	skillSelections map[string]bool
-	permSelections map[string]bool
-	hookSelections map[string]bool
+	permSelections  map[string]bool
+	hookSelections  map[string]bool
 
 	// CLAUDE.md: index into discovered templates, -1 = none
 	claudeMDOptions []string // available template names/paths
@@ -84,9 +94,9 @@ type LaunchWizardModel struct {
 	claudeMDChoice  int // selected index, -1 = none
 
 	// Env vars: key-value pairs
-	envKeys   []string
-	envValues []string
-	envCursor int
+	envKeys    []string
+	envValues  []string
+	envCursor  int
 	envEditing bool // true when editing a value
 	envField   int  // 0 = key, 1 = value
 
@@ -113,16 +123,17 @@ func NewLaunchWizardModel(
 	existingProfile *profile.Profile,
 ) LaunchWizardModel {
 	m := LaunchWizardModel{
-		project:        proj,
-		mode:           mode,
-		step:           launchStepMCPs,
-		discovered:     discovered,
-		mcpSelections:  make(map[string]bool),
+		project:         proj,
+		mode:            mode,
+		phase:           phaseSteps,
+		step:            launchStepMCPs,
+		discovered:      discovered,
+		mcpSelections:   make(map[string]bool),
 		skillSelections: make(map[string]bool),
-		permSelections: make(map[string]bool),
-		hookSelections: make(map[string]bool),
-		claudeMDChoice: -1,
-		isolation:      profile.IsolationNone,
+		permSelections:  make(map[string]bool),
+		hookSelections:  make(map[string]bool),
+		claudeMDChoice:  -1,
+		isolation:       profile.IsolationNone,
 	}
 
 	// Build CLAUDE.md options from discovered skills that look like templates
@@ -190,12 +201,24 @@ func (m LaunchWizardModel) Update(msg tea.Msg) (LaunchWizardModel, tea.Cmd) {
 }
 
 func (m LaunchWizardModel) handleKey(msg tea.KeyMsg) (LaunchWizardModel, tea.Cmd) {
-	key := msg.String()
-
-	switch key {
-	case "ctrl+c":
+	// Global cancel
+	if msg.String() == "ctrl+c" {
 		return m, func() tea.Msg { return LaunchWizardCancelledMsg{} }
+	}
 
+	switch m.phase {
+	case phaseChecklist:
+		return m.handleChecklistKey(msg)
+	default:
+		if m.mode == lwModeHub {
+			return m.handleHubKey(msg)
+		}
+		return m.handleSequentialKey(msg)
+	}
+}
+
+func (m LaunchWizardModel) handleSequentialKey(msg tea.KeyMsg) (LaunchWizardModel, tea.Cmd) {
+	switch msg.String() {
 	case "esc":
 		if m.step == launchStepMCPs {
 			return m, func() tea.Msg { return LaunchWizardCancelledMsg{} }
@@ -208,23 +231,60 @@ func (m LaunchWizardModel) handleKey(msg tea.KeyMsg) (LaunchWizardModel, tea.Cmd
 			m.step++
 			return m, nil
 		}
-		// Last step — complete the wizard
-		return m, func() tea.Msg {
-			return LaunchWizardCompleteMsg{
-				Profile: m.buildProfile(),
-				Launch:  true,
-			}
-		}
+		// Last step → go to checklist
+		m.phase = phaseChecklist
+		return m, nil
 
 	case "tab":
-		// Skip to next step
 		if m.step < launchStepCount-1 {
 			m.step++
 		}
 		return m, nil
 	}
 
-	// Delegate to step-specific handlers
+	return m.handleStepInput(msg)
+}
+
+func (m LaunchWizardModel) handleHubKey(msg tea.KeyMsg) (LaunchWizardModel, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		return m, func() tea.Msg { return LaunchWizardCancelledMsg{} }
+	case "tab":
+		m.step = launchStep((int(m.step) + 1) % int(launchStepCount))
+		return m, nil
+	case "shift+tab":
+		m.step = launchStep((int(m.step) - 1 + int(launchStepCount)) % int(launchStepCount))
+		return m, nil
+	case "enter":
+		m.phase = phaseChecklist
+		return m, nil
+	}
+
+	return m.handleStepInput(msg)
+}
+
+func (m LaunchWizardModel) handleChecklistKey(msg tea.KeyMsg) (LaunchWizardModel, tea.Cmd) {
+	switch msg.String() {
+	case "enter", "ctrl+l":
+		return m, func() tea.Msg {
+			return LaunchWizardCompleteMsg{
+				Profile: m.buildProfile(),
+				Launch:  true,
+			}
+		}
+	case "e":
+		// Back to hub mode for editing
+		m.phase = phaseSteps
+		m.mode = lwModeHub
+		return m, nil
+	case "esc":
+		return m, func() tea.Msg { return LaunchWizardCancelledMsg{} }
+	}
+	return m, nil
+}
+
+// handleStepInput delegates to the step-specific handler for the current step.
+func (m LaunchWizardModel) handleStepInput(msg tea.KeyMsg) (LaunchWizardModel, tea.Cmd) {
 	switch m.step {
 	case launchStepMCPs:
 		return m.updateMultiSelect(msg, m.mcpItems(), m.mcpSelections)
@@ -241,7 +301,6 @@ func (m LaunchWizardModel) handleKey(msg tea.KeyMsg) (LaunchWizardModel, tea.Cmd
 	case launchStepIsolation:
 		return m.updateIsolation(msg)
 	}
-
 	return m, nil
 }
 
@@ -463,15 +522,23 @@ func (m LaunchWizardModel) buildProfile() profile.Profile {
 	return p
 }
 
-// Step returns the current step (for testing).
+// --- Test accessors ---
+
+// Step returns the current step.
 func (m LaunchWizardModel) Step() launchStep { return m.step }
 
-// Selections returns the current selections (for testing).
-func (m LaunchWizardModel) MCPSelections() map[string]bool   { return m.mcpSelections }
-func (m LaunchWizardModel) SkillSelections() map[string]bool  { return m.skillSelections }
-func (m LaunchWizardModel) PermSelections() map[string]bool   { return m.permSelections }
-func (m LaunchWizardModel) HookSelections() map[string]bool   { return m.hookSelections }
-func (m LaunchWizardModel) Isolation() profile.IsolationStrategy { return m.isolation }
+// Phase returns the current phase.
+func (m LaunchWizardModel) Phase() wizardPhase { return m.phase }
+
+// WizardMode returns the current wizard mode.
+func (m LaunchWizardModel) WizardMode() launchWizardMode { return m.mode }
+
+// Selection accessors.
+func (m LaunchWizardModel) MCPSelections() map[string]bool        { return m.mcpSelections }
+func (m LaunchWizardModel) SkillSelections() map[string]bool      { return m.skillSelections }
+func (m LaunchWizardModel) PermSelections() map[string]bool       { return m.permSelections }
+func (m LaunchWizardModel) HookSelections() map[string]bool       { return m.hookSelections }
+func (m LaunchWizardModel) Isolation() profile.IsolationStrategy  { return m.isolation }
 
 // --- View ---
 
@@ -480,6 +547,19 @@ func (m LaunchWizardModel) View() string {
 		return "Loading..."
 	}
 
+	switch m.phase {
+	case phaseChecklist:
+		return m.renderChecklistView()
+	default:
+		if m.mode == lwModeHub {
+			return m.renderHubView()
+		}
+		return m.renderSequentialView()
+	}
+}
+
+// renderSequentialView renders the step-by-step wizard view.
+func (m LaunchWizardModel) renderSequentialView() string {
 	var b strings.Builder
 
 	// Progress indicator
@@ -492,27 +572,12 @@ func (m LaunchWizardModel) View() string {
 	b.WriteString("\n\n")
 
 	// Step content
-	switch m.step {
-	case launchStepMCPs:
-		m.renderMultiSelect(&b, m.mcpItems(), m.mcpSelections, "No MCP servers discovered. Add servers in the management TUI.")
-	case launchStepSkills:
-		m.renderMultiSelect(&b, m.skillItems(), m.skillSelections, "No skills discovered. Add skills in the management TUI.")
-	case launchStepPermissions:
-		m.renderMultiSelect(&b, m.permItems(), m.permSelections, "No permissions discovered.")
-	case launchStepHooks:
-		m.renderMultiSelect(&b, m.hookItems(), m.hookSelections, "No hooks discovered.")
-	case launchStepClaudeMD:
-		m.renderClaudeMD(&b)
-	case launchStepEnvVars:
-		m.renderEnvVars(&b)
-	case launchStepIsolation:
-		m.renderIsolation(&b)
-	}
+	m.renderStepContent(&b)
 
 	// Navigation hints
 	b.WriteString("\n")
 	if m.step == launchStepCount-1 {
-		b.WriteString(formHintStyle.Render("space: select | enter: finish | esc: back | tab: skip"))
+		b.WriteString(formHintStyle.Render("space: select | enter: review | esc: back | tab: skip"))
 	} else {
 		b.WriteString(formHintStyle.Render("space: toggle | enter: next | esc: back | tab: skip | a: toggle all"))
 	}
@@ -520,6 +585,139 @@ func (m LaunchWizardModel) View() string {
 	formWidth := clamp(m.width-4, 40, 80)
 	content := formBoxStyle.Width(formWidth).Render(b.String())
 	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+}
+
+// renderHubView renders the hub mode with category menu and editing pane.
+func (m LaunchWizardModel) renderHubView() string {
+	var b strings.Builder
+
+	b.WriteString(formTitleStyle.Render("Configure Profile"))
+	b.WriteString("\n\n")
+
+	// Left: category menu with selection counts
+	var left strings.Builder
+	for i := 0; i < int(launchStepCount); i++ {
+		cur := "  "
+		if launchStep(i) == m.step {
+			cur = "\u25b8 "
+		}
+		label := launchStepLabels[i]
+		summary := m.selectionSummary(launchStep(i))
+		line := fmt.Sprintf("%s%-14s %s", cur, label, summary)
+		if launchStep(i) == m.step {
+			left.WriteString(sectionActiveStyle.Render(line))
+		} else {
+			left.WriteString(line)
+		}
+		left.WriteString("\n")
+	}
+
+	// Right: editing pane for current step
+	var right strings.Builder
+	right.WriteString(detailTitleStyle.Render(launchStepLabels[m.step]))
+	right.WriteString("\n\n")
+	m.renderStepContent(&right)
+
+	leftWidth := 30
+	rightWidth := clamp(m.width-leftWidth-10, 20, 60)
+
+	leftRendered := lipgloss.NewStyle().Width(leftWidth).Render(left.String())
+	rightRendered := detailPaneStyle.Width(rightWidth).Render(right.String())
+
+	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftRendered, rightRendered))
+	b.WriteString("\n")
+	b.WriteString(formHintStyle.Render("tab/shift+tab: category | space: toggle | enter: review | esc: cancel"))
+
+	formWidth := clamp(m.width-4, 40, 100)
+	content := formBoxStyle.Width(formWidth).Render(b.String())
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+}
+
+// renderChecklistView renders the review & confirm checklist.
+func (m LaunchWizardModel) renderChecklistView() string {
+	var b strings.Builder
+
+	b.WriteString(formTitleStyle.Render("Review & Launch"))
+	b.WriteString("\n\n")
+
+	sections := []struct {
+		label string
+		items []string
+	}{
+		{"MCPs", m.selectedNames(m.mcpSelections)},
+		{"Skills", m.selectedNames(m.skillSelections)},
+		{"Permissions", m.selectedNames(m.permSelections)},
+		{"Hooks", m.selectedNames(m.hookSelections)},
+	}
+
+	for _, sec := range sections {
+		b.WriteString(sectionHeaderStyle.Render(sec.label))
+		b.WriteString("\n")
+		if len(sec.items) == 0 {
+			b.WriteString(formHintStyle.Render("  (none)"))
+			b.WriteString("\n")
+		} else {
+			for _, name := range sec.items {
+				b.WriteString(fmt.Sprintf("  \u2022 %s\n", name))
+			}
+		}
+	}
+
+	// CLAUDE.md
+	b.WriteString(sectionHeaderStyle.Render("CLAUDE.md"))
+	b.WriteString("\n")
+	claudeMD := "(none)"
+	if m.claudeMDChoice > 0 && m.claudeMDChoice < len(m.claudeMDOptions) {
+		claudeMD = m.claudeMDOptions[m.claudeMDChoice]
+	}
+	b.WriteString(fmt.Sprintf("  %s\n", claudeMD))
+
+	// Env Vars
+	b.WriteString(sectionHeaderStyle.Render("Environment Variables"))
+	b.WriteString("\n")
+	envCount := 0
+	for i, k := range m.envKeys {
+		if k != "" && i < len(m.envValues) {
+			b.WriteString(fmt.Sprintf("  %s=%s\n", k, m.envValues[i]))
+			envCount++
+		}
+	}
+	if envCount == 0 {
+		b.WriteString(formHintStyle.Render("  (none)"))
+		b.WriteString("\n")
+	}
+
+	// Isolation
+	b.WriteString(sectionHeaderStyle.Render("Isolation"))
+	b.WriteString("\n")
+	b.WriteString(fmt.Sprintf("  %s\n", string(m.isolation)))
+
+	b.WriteString("\n")
+	b.WriteString(formHintStyle.Render("enter: launch | e: edit | esc: cancel"))
+
+	formWidth := clamp(m.width-4, 40, 80)
+	content := formBoxStyle.Width(formWidth).Render(b.String())
+	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+}
+
+// renderStepContent renders the content for the current step.
+func (m LaunchWizardModel) renderStepContent(b *strings.Builder) {
+	switch m.step {
+	case launchStepMCPs:
+		m.renderMultiSelect(b, m.mcpItems(), m.mcpSelections, "No MCP servers discovered. Add servers in the management TUI.")
+	case launchStepSkills:
+		m.renderMultiSelect(b, m.skillItems(), m.skillSelections, "No skills discovered. Add skills in the management TUI.")
+	case launchStepPermissions:
+		m.renderMultiSelect(b, m.permItems(), m.permSelections, "No permissions discovered.")
+	case launchStepHooks:
+		m.renderMultiSelect(b, m.hookItems(), m.hookSelections, "No hooks discovered.")
+	case launchStepClaudeMD:
+		m.renderClaudeMD(b)
+	case launchStepEnvVars:
+		m.renderEnvVars(b)
+	case launchStepIsolation:
+		m.renderIsolation(b)
+	}
 }
 
 func (m LaunchWizardModel) renderProgress() string {
@@ -577,12 +775,7 @@ func (m LaunchWizardModel) renderMultiSelect(b *strings.Builder, items []wizardI
 		b.WriteString("\n")
 	}
 
-	selected := 0
-	for _, sel := range selections {
-		if sel {
-			selected++
-		}
-	}
+	selected := countSelected(selections)
 	b.WriteString(fmt.Sprintf("\n%s", formLabelStyle.Render(fmt.Sprintf("%d/%d selected", selected, len(items)))))
 }
 
@@ -638,6 +831,55 @@ func (m LaunchWizardModel) renderIsolation(b *strings.Builder) {
 		b.WriteString(fmt.Sprintf("%s%s %s\n", cur, radio, detailTitleStyle.Render(opt.label)))
 		b.WriteString(fmt.Sprintf("       %s\n", formHintStyle.Render(opt.desc)))
 	}
+}
+
+// --- Helpers ---
+
+// selectedNames returns sorted names of selected items from a selection map.
+func (m LaunchWizardModel) selectedNames(selections map[string]bool) []string {
+	var result []string
+	for name, sel := range selections {
+		if sel {
+			result = append(result, name)
+		}
+	}
+	sort.Strings(result)
+	return result
+}
+
+// selectionSummary returns a short summary for a step (used in hub menu).
+func (m LaunchWizardModel) selectionSummary(step launchStep) string {
+	switch step {
+	case launchStepMCPs:
+		return fmt.Sprintf("(%d)", countSelected(m.mcpSelections))
+	case launchStepSkills:
+		return fmt.Sprintf("(%d)", countSelected(m.skillSelections))
+	case launchStepPermissions:
+		return fmt.Sprintf("(%d)", countSelected(m.permSelections))
+	case launchStepHooks:
+		return fmt.Sprintf("(%d)", countSelected(m.hookSelections))
+	case launchStepClaudeMD:
+		if m.claudeMDChoice > 0 && m.claudeMDChoice < len(m.claudeMDOptions) {
+			return m.claudeMDOptions[m.claudeMDChoice]
+		}
+		return "(none)"
+	case launchStepEnvVars:
+		return fmt.Sprintf("(%d)", len(m.envKeys))
+	case launchStepIsolation:
+		return string(m.isolation)
+	}
+	return ""
+}
+
+// countSelected returns the number of true values in a selection map.
+func countSelected(selections map[string]bool) int {
+	n := 0
+	for _, sel := range selections {
+		if sel {
+			n++
+		}
+	}
+	return n
 }
 
 // visibleRange calculates the visible window for a scrollable list.
