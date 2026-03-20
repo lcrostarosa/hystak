@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lcrostarosa/hystak/internal/backup"
 	"github.com/lcrostarosa/hystak/internal/deploy"
 	"github.com/lcrostarosa/hystak/internal/model"
 	"github.com/lcrostarosa/hystak/internal/project"
@@ -49,12 +50,14 @@ func testDiffService(t *testing.T, registryServers map[string]model.ServerDef, d
 
 	deployer, _ := deploy.NewDeployer(model.ClientClaudeCode)
 
-	svc := &service.Service{
-		Registry:  reg,
-		Projects:  store,
-		Deployers: map[model.ClientType]deploy.Deployer{model.ClientClaudeCode: deployer},
-		ConfigDir: configDir,
-	}
+	svc := service.NewForTest(
+		reg,
+		store,
+		map[model.ClientType]deploy.Deployer{model.ClientClaudeCode: deployer},
+		backup.NewManager(filepath.Join(configDir, "backups")),
+		configDir,
+		nil,
+	)
 
 	return svc, projectDir
 }

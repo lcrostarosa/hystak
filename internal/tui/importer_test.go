@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/lcrostarosa/hystak/internal/backup"
 	"github.com/lcrostarosa/hystak/internal/deploy"
 	"github.com/lcrostarosa/hystak/internal/model"
 	"github.com/lcrostarosa/hystak/internal/project"
@@ -46,12 +47,14 @@ func testImportService(t *testing.T, importServers map[string]interface{}) (*ser
 
 	deployer, _ := deploy.NewDeployer(model.ClientClaudeCode)
 
-	svc := &service.Service{
-		Registry:  reg,
-		Projects:  store,
-		Deployers: map[model.ClientType]deploy.Deployer{model.ClientClaudeCode: deployer},
-		ConfigDir: configDir,
-	}
+	svc := service.NewForTest(
+		reg,
+		store,
+		map[model.ClientType]deploy.Deployer{model.ClientClaudeCode: deployer},
+		backup.NewManager(filepath.Join(configDir, "backups")),
+		configDir,
+		nil,
+	)
 
 	return svc, projectDir
 }
@@ -229,7 +232,7 @@ func TestImportNoConflictImportsDirectly(t *testing.T) {
 	}
 
 	// Verify server was added to registry.
-	if _, ok := svc.Registry.Get("new-server"); !ok {
+	if _, ok := svc.GetServer("new-server"); !ok {
 		t.Error("expected new-server to be in registry")
 	}
 }
@@ -295,7 +298,7 @@ func TestImportConflictSkip(t *testing.T) {
 	}
 
 	// Verify existing server is unchanged.
-	srv, _ := svc.Registry.Get("existing")
+	srv, _ := svc.GetServer("existing")
 	if srv.Command != "existing-cmd" {
 		t.Errorf("expected existing command unchanged, got %q", srv.Command)
 	}
@@ -331,7 +334,7 @@ func TestImportConflictReplace(t *testing.T) {
 	}
 
 	// Verify existing server was replaced.
-	srv, _ := svc.Registry.Get("existing")
+	srv, _ := svc.GetServer("existing")
 	if srv.Command != "new-cmd" {
 		t.Errorf("expected replaced command 'new-cmd', got %q", srv.Command)
 	}
@@ -376,11 +379,11 @@ func TestImportConflictRename(t *testing.T) {
 	}
 
 	// Verify original server unchanged and renamed exists.
-	orig, _ := svc.Registry.Get("existing")
+	orig, _ := svc.GetServer("existing")
 	if orig.Command != "existing-cmd" {
 		t.Errorf("expected original unchanged, got %q", orig.Command)
 	}
-	renamed, ok := svc.Registry.Get("existing-imported")
+	renamed, ok := svc.GetServer("existing-imported")
 	if !ok {
 		t.Error("expected renamed server to exist in registry")
 	}
@@ -444,8 +447,8 @@ func TestImportViewInputPath(t *testing.T) {
 	m.SetSize(80, 24)
 
 	view := m.View()
-	if !strings.Contains(view, "Import Servers") {
-		t.Error("expected 'Import Servers' in view")
+	if !strings.Contains(view, "Import MCPs") {
+		t.Error("expected 'Import MCPs' in view")
 	}
 	if !strings.Contains(view, "Config file path") {
 		t.Error("expected 'Config file path' label in view")
@@ -462,8 +465,8 @@ func TestImportViewPreview(t *testing.T) {
 	m.selected = []bool{true}
 
 	view := m.View()
-	if !strings.Contains(view, "Select Servers to Import") {
-		t.Error("expected 'Select Servers to Import' in preview view")
+	if !strings.Contains(view, "Select MCPs to Import") {
+		t.Error("expected 'Select MCPs to Import' in preview view")
 	}
 	if !strings.Contains(view, "test-srv") {
 		t.Error("expected server name in preview view")
@@ -544,9 +547,9 @@ func TestAppImportCompleted(t *testing.T) {
 	}
 }
 
-func TestServersTabImportKey(t *testing.T) {
+func TestMCPsTabImportKey(t *testing.T) {
 	svc := testService()
-	m := NewServersModel(svc)
+	m := NewMCPsModel(svc)
 	m.SetSize(80, 24)
 
 	_, cmd := m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune{'i'}}))

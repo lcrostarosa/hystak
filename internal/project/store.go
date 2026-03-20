@@ -6,6 +6,7 @@ import (
 	"os"
 	"sort"
 
+	hysterr "github.com/lcrostarosa/hystak/internal/errors"
 	"github.com/lcrostarosa/hystak/internal/model"
 	"github.com/lcrostarosa/hystak/internal/registry"
 	"gopkg.in/yaml.v3"
@@ -74,7 +75,7 @@ func (s *Store) Save(path string) error {
 // Add adds a project to the store. Returns an error if the name already exists.
 func (s *Store) Add(proj model.Project) error {
 	if _, exists := s.Projects[proj.Name]; exists {
-		return fmt.Errorf("project %q already exists", proj.Name)
+		return hysterr.ProjectAlreadyExists(proj.Name)
 	}
 	s.Projects[proj.Name] = proj
 	return nil
@@ -83,7 +84,7 @@ func (s *Store) Add(proj model.Project) error {
 // Remove deletes a project from the store. Returns an error if not found.
 func (s *Store) Remove(name string) error {
 	if _, exists := s.Projects[name]; !exists {
-		return fmt.Errorf("project %q not found", name)
+		return hysterr.ProjectNotFound(name)
 	}
 	delete(s.Projects, name)
 	return nil
@@ -112,12 +113,12 @@ func (s *Store) List() []model.Project {
 func (s *Store) Assign(projectName, serverName string) error {
 	proj, ok := s.Projects[projectName]
 	if !ok {
-		return fmt.Errorf("project %q not found", projectName)
+		return hysterr.ProjectNotFound(projectName)
 	}
 
 	for _, mcp := range proj.MCPs {
 		if mcp.Name == serverName {
-			return fmt.Errorf("server %q already assigned to project %q", serverName, projectName)
+			return hysterr.ServerAlreadyAssigned(serverName, projectName)
 		}
 	}
 
@@ -131,7 +132,7 @@ func (s *Store) Assign(projectName, serverName string) error {
 func (s *Store) Unassign(projectName, serverName string) error {
 	proj, ok := s.Projects[projectName]
 	if !ok {
-		return fmt.Errorf("project %q not found", projectName)
+		return hysterr.ProjectNotFound(projectName)
 	}
 
 	found := false
@@ -145,7 +146,7 @@ func (s *Store) Unassign(projectName, serverName string) error {
 	}
 
 	if !found {
-		return fmt.Errorf("server %q not assigned to project %q", serverName, projectName)
+		return hysterr.ServerNotAssigned(serverName, projectName)
 	}
 
 	proj.MCPs = mcps
@@ -158,7 +159,7 @@ func (s *Store) Unassign(projectName, serverName string) error {
 func (s *Store) SetOverride(projectName, serverName string, override model.ServerOverride) error {
 	proj, ok := s.Projects[projectName]
 	if !ok {
-		return fmt.Errorf("project %q not found", projectName)
+		return hysterr.ProjectNotFound(projectName)
 	}
 
 	found := false
@@ -181,11 +182,173 @@ func (s *Store) SetOverride(projectName, serverName string, override model.Serve
 	return nil
 }
 
+// AssignSkill adds a skill name to a project's skills list.
+// Returns an error if the project is not found or the skill is already assigned.
+func (s *Store) AssignSkill(projectName, skillName string) error {
+	proj, ok := s.Projects[projectName]
+	if !ok {
+		return hysterr.ProjectNotFound(projectName)
+	}
+
+	for _, sk := range proj.Skills {
+		if sk == skillName {
+			return hysterr.SkillAlreadyAssigned(skillName, projectName)
+		}
+	}
+
+	proj.Skills = append(proj.Skills, skillName)
+	s.Projects[projectName] = proj
+	return nil
+}
+
+// UnassignSkill removes a skill from a project's skills list.
+// Returns an error if the project or skill assignment is not found.
+func (s *Store) UnassignSkill(projectName, skillName string) error {
+	proj, ok := s.Projects[projectName]
+	if !ok {
+		return hysterr.ProjectNotFound(projectName)
+	}
+
+	found := false
+	skills := make([]string, 0, len(proj.Skills))
+	for _, sk := range proj.Skills {
+		if sk == skillName {
+			found = true
+			continue
+		}
+		skills = append(skills, sk)
+	}
+
+	if !found {
+		return hysterr.SkillNotAssigned(skillName, projectName)
+	}
+
+	proj.Skills = skills
+	s.Projects[projectName] = proj
+	return nil
+}
+
+// AssignHook adds a hook name to a project's hooks list.
+// Returns an error if the project is not found or the hook is already assigned.
+func (s *Store) AssignHook(projectName, hookName string) error {
+	proj, ok := s.Projects[projectName]
+	if !ok {
+		return hysterr.ProjectNotFound(projectName)
+	}
+
+	for _, h := range proj.Hooks {
+		if h == hookName {
+			return hysterr.HookAlreadyAssigned(hookName, projectName)
+		}
+	}
+
+	proj.Hooks = append(proj.Hooks, hookName)
+	s.Projects[projectName] = proj
+	return nil
+}
+
+// UnassignHook removes a hook from a project's hooks list.
+// Returns an error if the project or hook assignment is not found.
+func (s *Store) UnassignHook(projectName, hookName string) error {
+	proj, ok := s.Projects[projectName]
+	if !ok {
+		return hysterr.ProjectNotFound(projectName)
+	}
+
+	found := false
+	hooks := make([]string, 0, len(proj.Hooks))
+	for _, h := range proj.Hooks {
+		if h == hookName {
+			found = true
+			continue
+		}
+		hooks = append(hooks, h)
+	}
+
+	if !found {
+		return hysterr.HookNotAssigned(hookName, projectName)
+	}
+
+	proj.Hooks = hooks
+	s.Projects[projectName] = proj
+	return nil
+}
+
+// AssignPermission adds a permission name to a project's permissions list.
+// Returns an error if the project is not found or the permission is already assigned.
+func (s *Store) AssignPermission(projectName, permName string) error {
+	proj, ok := s.Projects[projectName]
+	if !ok {
+		return hysterr.ProjectNotFound(projectName)
+	}
+
+	for _, p := range proj.Permissions {
+		if p == permName {
+			return hysterr.PermissionAlreadyAssigned(permName, projectName)
+		}
+	}
+
+	proj.Permissions = append(proj.Permissions, permName)
+	s.Projects[projectName] = proj
+	return nil
+}
+
+// UnassignPermission removes a permission from a project's permissions list.
+// Returns an error if the project or permission assignment is not found.
+func (s *Store) UnassignPermission(projectName, permName string) error {
+	proj, ok := s.Projects[projectName]
+	if !ok {
+		return hysterr.ProjectNotFound(projectName)
+	}
+
+	found := false
+	perms := make([]string, 0, len(proj.Permissions))
+	for _, p := range proj.Permissions {
+		if p == permName {
+			found = true
+			continue
+		}
+		perms = append(perms, p)
+	}
+
+	if !found {
+		return hysterr.PermissionNotAssigned(permName, projectName)
+	}
+
+	proj.Permissions = perms
+	s.Projects[projectName] = proj
+	return nil
+}
+
+// SetClaudeMDTemplate sets the ClaudeMD template name for a project.
+// Returns an error if the project is not found.
+func (s *Store) SetClaudeMDTemplate(projectName, templateName string) error {
+	proj, ok := s.Projects[projectName]
+	if !ok {
+		return hysterr.ProjectNotFound(projectName)
+	}
+	proj.ClaudeMD = templateName
+	s.Projects[projectName] = proj
+	return nil
+}
+
+// ClearClaudeMDTemplate removes the ClaudeMD template assignment from a project.
+// Returns an error if the project is not found.
+func (s *Store) ClearClaudeMDTemplate(projectName string) error {
+	proj, ok := s.Projects[projectName]
+	if !ok {
+		return hysterr.ProjectNotFound(projectName)
+	}
+	proj.ClaudeMD = ""
+	s.Projects[projectName] = proj
+	return nil
+}
+
 // SetClients updates the client list for a project.
 func (s *Store) SetClients(projectName string, clients []model.ClientType) error {
 	proj, ok := s.Projects[projectName]
 	if !ok {
-		return fmt.Errorf("project %q not found", projectName)
+		return hysterr.ProjectNotFound(projectName)
 	}
 	proj.Clients = clients
 	s.Projects[projectName] = proj
@@ -196,7 +359,7 @@ func (s *Store) SetClients(projectName string, clients []model.ClientType) error
 func (s *Store) SetTags(projectName string, tags []string) error {
 	proj, ok := s.Projects[projectName]
 	if !ok {
-		return fmt.Errorf("project %q not found", projectName)
+		return hysterr.ProjectNotFound(projectName)
 	}
 	proj.Tags = tags
 	s.Projects[projectName] = proj
@@ -216,7 +379,7 @@ func (s *Store) SetTags(projectName string, tags []string) error {
 func (s *Store) ResolveServers(projectName string, reg *registry.Registry) ([]model.ServerDef, error) {
 	proj, ok := s.Projects[projectName]
 	if !ok {
-		return nil, fmt.Errorf("project %q not found", projectName)
+		return nil, hysterr.ProjectNotFound(projectName)
 	}
 
 	// Build override lookup from mcps.
@@ -262,7 +425,7 @@ func (s *Store) ResolveServers(projectName string, reg *registry.Registry) ([]mo
 		}
 
 		if override, hasOverride := overrides[name]; hasOverride {
-			srv = applyOverride(srv, override)
+			srv = ApplyOverride(srv, override)
 		}
 
 		resolved = append(resolved, srv)
@@ -277,12 +440,12 @@ func empty() *Store {
 	}
 }
 
-// applyOverride shallow-merges an override onto a server definition.
+// ApplyOverride shallow-merges an override onto a server definition.
 //   - env: merge maps (override keys win)
 //   - headers: merge maps (override keys win)
 //   - args: replace entirely
 //   - command, url: replace if non-nil
-func applyOverride(srv model.ServerDef, override *model.ServerOverride) model.ServerDef {
+func ApplyOverride(srv model.ServerDef, override *model.ServerOverride) model.ServerDef {
 	if override.Command != nil {
 		srv.Command = *override.Command
 	}

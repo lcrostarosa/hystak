@@ -731,3 +731,261 @@ func TestListSorted(t *testing.T) {
 		t.Errorf("expected sorted order, got %v, %v, %v", list[0].Name, list[1].Name, list[2].Name)
 	}
 }
+
+// ---------------------------------------------------------------------------
+// Skill assignment tests
+// ---------------------------------------------------------------------------
+
+func newStoreWithProject() *Store {
+	return &Store{Projects: map[string]model.Project{
+		"proj": {Name: "proj", Path: "/proj", Clients: []model.ClientType{model.ClientClaudeCode}},
+	}}
+}
+
+func TestAssignSkill(t *testing.T) {
+	s := newStoreWithProject()
+
+	if err := s.AssignSkill("proj", "code-review"); err != nil {
+		t.Fatalf("AssignSkill: %v", err)
+	}
+
+	proj, _ := s.Get("proj")
+	if len(proj.Skills) != 1 || proj.Skills[0] != "code-review" {
+		t.Fatalf("expected Skills=[code-review], got %v", proj.Skills)
+	}
+}
+
+func TestAssignSkillDuplicate(t *testing.T) {
+	s := newStoreWithProject()
+
+	if err := s.AssignSkill("proj", "code-review"); err != nil {
+		t.Fatalf("AssignSkill: %v", err)
+	}
+	if err := s.AssignSkill("proj", "code-review"); err == nil {
+		t.Fatal("expected error on duplicate skill assignment")
+	}
+}
+
+func TestAssignSkillProjectNotFound(t *testing.T) {
+	s := newStoreWithProject()
+
+	if err := s.AssignSkill("nonexistent", "code-review"); err == nil {
+		t.Fatal("expected error on assign skill to non-existent project")
+	}
+}
+
+func TestUnassignSkill(t *testing.T) {
+	s := newStoreWithProject()
+
+	_ = s.AssignSkill("proj", "code-review")
+	_ = s.AssignSkill("proj", "testing")
+
+	if err := s.UnassignSkill("proj", "code-review"); err != nil {
+		t.Fatalf("UnassignSkill: %v", err)
+	}
+
+	proj, _ := s.Get("proj")
+	if len(proj.Skills) != 1 || proj.Skills[0] != "testing" {
+		t.Fatalf("expected Skills=[testing], got %v", proj.Skills)
+	}
+}
+
+func TestUnassignSkillNotAssigned(t *testing.T) {
+	s := newStoreWithProject()
+
+	if err := s.UnassignSkill("proj", "code-review"); err == nil {
+		t.Fatal("expected error on unassign of not-assigned skill")
+	}
+}
+
+func TestUnassignSkillProjectNotFound(t *testing.T) {
+	s := newStoreWithProject()
+
+	if err := s.UnassignSkill("nonexistent", "code-review"); err == nil {
+		t.Fatal("expected error on unassign skill from non-existent project")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Hook assignment tests
+// ---------------------------------------------------------------------------
+
+func TestAssignHook(t *testing.T) {
+	s := newStoreWithProject()
+
+	if err := s.AssignHook("proj", "pre-commit"); err != nil {
+		t.Fatalf("AssignHook: %v", err)
+	}
+
+	proj, _ := s.Get("proj")
+	if len(proj.Hooks) != 1 || proj.Hooks[0] != "pre-commit" {
+		t.Fatalf("expected Hooks=[pre-commit], got %v", proj.Hooks)
+	}
+}
+
+func TestAssignHookDuplicate(t *testing.T) {
+	s := newStoreWithProject()
+
+	if err := s.AssignHook("proj", "pre-commit"); err != nil {
+		t.Fatalf("AssignHook: %v", err)
+	}
+	if err := s.AssignHook("proj", "pre-commit"); err == nil {
+		t.Fatal("expected error on duplicate hook assignment")
+	}
+}
+
+func TestAssignHookProjectNotFound(t *testing.T) {
+	s := newStoreWithProject()
+
+	if err := s.AssignHook("nonexistent", "pre-commit"); err == nil {
+		t.Fatal("expected error on assign hook to non-existent project")
+	}
+}
+
+func TestUnassignHook(t *testing.T) {
+	s := newStoreWithProject()
+
+	_ = s.AssignHook("proj", "pre-commit")
+	_ = s.AssignHook("proj", "post-deploy")
+
+	if err := s.UnassignHook("proj", "pre-commit"); err != nil {
+		t.Fatalf("UnassignHook: %v", err)
+	}
+
+	proj, _ := s.Get("proj")
+	if len(proj.Hooks) != 1 || proj.Hooks[0] != "post-deploy" {
+		t.Fatalf("expected Hooks=[post-deploy], got %v", proj.Hooks)
+	}
+}
+
+func TestUnassignHookNotAssigned(t *testing.T) {
+	s := newStoreWithProject()
+
+	if err := s.UnassignHook("proj", "pre-commit"); err == nil {
+		t.Fatal("expected error on unassign of not-assigned hook")
+	}
+}
+
+func TestUnassignHookProjectNotFound(t *testing.T) {
+	s := newStoreWithProject()
+
+	if err := s.UnassignHook("nonexistent", "pre-commit"); err == nil {
+		t.Fatal("expected error on unassign hook from non-existent project")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Permission assignment tests
+// ---------------------------------------------------------------------------
+
+func TestAssignPermission(t *testing.T) {
+	s := newStoreWithProject()
+
+	if err := s.AssignPermission("proj", "read-files"); err != nil {
+		t.Fatalf("AssignPermission: %v", err)
+	}
+
+	proj, _ := s.Get("proj")
+	if len(proj.Permissions) != 1 || proj.Permissions[0] != "read-files" {
+		t.Fatalf("expected Permissions=[read-files], got %v", proj.Permissions)
+	}
+}
+
+func TestAssignPermissionDuplicate(t *testing.T) {
+	s := newStoreWithProject()
+
+	if err := s.AssignPermission("proj", "read-files"); err != nil {
+		t.Fatalf("AssignPermission: %v", err)
+	}
+	if err := s.AssignPermission("proj", "read-files"); err == nil {
+		t.Fatal("expected error on duplicate permission assignment")
+	}
+}
+
+func TestAssignPermissionProjectNotFound(t *testing.T) {
+	s := newStoreWithProject()
+
+	if err := s.AssignPermission("nonexistent", "read-files"); err == nil {
+		t.Fatal("expected error on assign permission to non-existent project")
+	}
+}
+
+func TestUnassignPermission(t *testing.T) {
+	s := newStoreWithProject()
+
+	_ = s.AssignPermission("proj", "read-files")
+	_ = s.AssignPermission("proj", "write-files")
+
+	if err := s.UnassignPermission("proj", "read-files"); err != nil {
+		t.Fatalf("UnassignPermission: %v", err)
+	}
+
+	proj, _ := s.Get("proj")
+	if len(proj.Permissions) != 1 || proj.Permissions[0] != "write-files" {
+		t.Fatalf("expected Permissions=[write-files], got %v", proj.Permissions)
+	}
+}
+
+func TestUnassignPermissionNotAssigned(t *testing.T) {
+	s := newStoreWithProject()
+
+	if err := s.UnassignPermission("proj", "read-files"); err == nil {
+		t.Fatal("expected error on unassign of not-assigned permission")
+	}
+}
+
+func TestUnassignPermissionProjectNotFound(t *testing.T) {
+	s := newStoreWithProject()
+
+	if err := s.UnassignPermission("nonexistent", "read-files"); err == nil {
+		t.Fatal("expected error on unassign permission from non-existent project")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Template management tests
+// ---------------------------------------------------------------------------
+
+func TestSetClaudeMDTemplate(t *testing.T) {
+	s := newStoreWithProject()
+
+	if err := s.SetClaudeMDTemplate("proj", "go-backend"); err != nil {
+		t.Fatalf("SetClaudeMDTemplate: %v", err)
+	}
+
+	proj, _ := s.Get("proj")
+	if proj.ClaudeMD != "go-backend" {
+		t.Fatalf("expected ClaudeMD=go-backend, got %q", proj.ClaudeMD)
+	}
+}
+
+func TestSetClaudeMDTemplateProjectNotFound(t *testing.T) {
+	s := newStoreWithProject()
+
+	if err := s.SetClaudeMDTemplate("nonexistent", "go-backend"); err == nil {
+		t.Fatal("expected error on set template for non-existent project")
+	}
+}
+
+func TestClearClaudeMDTemplate(t *testing.T) {
+	s := newStoreWithProject()
+
+	_ = s.SetClaudeMDTemplate("proj", "go-backend")
+
+	if err := s.ClearClaudeMDTemplate("proj"); err != nil {
+		t.Fatalf("ClearClaudeMDTemplate: %v", err)
+	}
+
+	proj, _ := s.Get("proj")
+	if proj.ClaudeMD != "" {
+		t.Fatalf("expected ClaudeMD empty, got %q", proj.ClaudeMD)
+	}
+}
+
+func TestClearClaudeMDTemplateProjectNotFound(t *testing.T) {
+	s := newStoreWithProject()
+
+	if err := s.ClearClaudeMDTemplate("nonexistent"); err == nil {
+		t.Fatal("expected error on clear template for non-existent project")
+	}
+}

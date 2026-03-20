@@ -20,6 +20,7 @@ type Project struct {
 	Profiles      map[string]ProjectProfile `yaml:"profiles,omitempty"`
 	ActiveProfile string                   `yaml:"active_profile,omitempty"`
 	Launched      bool                     `yaml:"launched,omitempty"`
+	ManagedMCPs   []string                 `yaml:"managed_mcps,omitempty"` // server names deployed by hystak in last sync
 }
 
 // ProjectProfile is a profile stored inline in a project config.
