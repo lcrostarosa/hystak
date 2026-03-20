@@ -680,3 +680,134 @@ func TestGetIsolation_UnknownFallsToNone(t *testing.T) {
 		t.Fatalf("expected none for unknown strategy, got %s", got)
 	}
 }
+
+// ---- Post-exit prompt tests ----
+
+func TestPromptPostExit_Relaunch(t *testing.T) {
+	for _, input := range []string{"r\n", "R\n", "relaunch\n"} {
+		t.Run(input, func(t *testing.T) {
+			reader := strings.NewReader(input)
+			w := new(bytes.Buffer)
+			action := promptPostExit(reader, w)
+			if action != actionRelaunch {
+				t.Errorf("input %q: expected actionRelaunch, got %d", input, action)
+			}
+		})
+	}
+}
+
+func TestPromptPostExit_Configure(t *testing.T) {
+	for _, input := range []string{"c\n", "C\n", "configure\n"} {
+		t.Run(input, func(t *testing.T) {
+			reader := strings.NewReader(input)
+			w := new(bytes.Buffer)
+			action := promptPostExit(reader, w)
+			if action != actionConfigure {
+				t.Errorf("input %q: expected actionConfigure, got %d", input, action)
+			}
+		})
+	}
+}
+
+func TestPromptPostExit_Quit(t *testing.T) {
+	for _, input := range []string{"q\n", "Q\n", "quit\n", "\n", ""} {
+		t.Run(input, func(t *testing.T) {
+			reader := strings.NewReader(input)
+			w := new(bytes.Buffer)
+			action := promptPostExit(reader, w)
+			if action != actionQuit {
+				t.Errorf("input %q: expected actionQuit, got %d", input, action)
+			}
+		})
+	}
+}
+
+func TestPromptPostExit_EmptyInput(t *testing.T) {
+	reader := strings.NewReader("")
+	w := new(bytes.Buffer)
+	action := promptPostExit(reader, w)
+	if action != actionQuit {
+		t.Errorf("empty input: expected actionQuit, got %d", action)
+	}
+}
+
+func TestPromptPostExit_ShowsPromptText(t *testing.T) {
+	reader := strings.NewReader("q\n")
+	w := new(bytes.Buffer)
+	promptPostExit(reader, w)
+	if !strings.Contains(w.String(), "[R]elaunch") {
+		t.Errorf("expected prompt text to contain '[R]elaunch', got: %s", w.String())
+	}
+	if !strings.Contains(w.String(), "[C]onfigure") {
+		t.Errorf("expected prompt text to contain '[C]onfigure', got: %s", w.String())
+	}
+	if !strings.Contains(w.String(), "[Q]uit") {
+		t.Errorf("expected prompt text to contain '[Q]uit', got: %s", w.String())
+	}
+}
+
+// ---- appendContinue tests ----
+
+func TestAppendContinue_AddsFlag(t *testing.T) {
+	args := []string{"--verbose"}
+	result := appendContinue(args)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(result))
+	}
+	if result[1] != "--continue" {
+		t.Errorf("expected '--continue' at index 1, got %q", result[1])
+	}
+}
+
+func TestAppendContinue_NoDuplicate(t *testing.T) {
+	args := []string{"--continue", "--verbose"}
+	result := appendContinue(args)
+	if len(result) != 2 {
+		t.Fatalf("expected 2 args (no duplicate), got %d", len(result))
+	}
+}
+
+func TestAppendContinue_EmptyArgs(t *testing.T) {
+	result := appendContinue(nil)
+	if len(result) != 1 {
+		t.Fatalf("expected 1 arg, got %d", len(result))
+	}
+	if result[0] != "--continue" {
+		t.Errorf("expected '--continue', got %q", result[0])
+	}
+}
+
+func TestAppendContinue_DoesNotMutateOriginal(t *testing.T) {
+	original := []string{"--verbose"}
+	result := appendContinue(original)
+	if len(original) != 1 {
+		t.Fatalf("original slice was mutated: len=%d", len(original))
+	}
+	if len(result) != 2 {
+		t.Fatalf("expected 2 args, got %d", len(result))
+	}
+}
+
+// ---- Dry-run still works with new loop code ----
+
+func TestRunCommandDryRunStillWorks(t *testing.T) {
+	dir := setupTestConfig(t)
+
+	// Sync first.
+	_, err := runCommand(t, dir, "sync", "myproject")
+	if err != nil {
+		t.Fatalf("sync failed: %v", err)
+	}
+
+	out, err := runCommand(t, dir, "run", "myproject", "--dry-run")
+	if err != nil {
+		t.Fatalf("run --dry-run failed: %v", err)
+	}
+	if !strings.Contains(out, "Would run:") {
+		t.Errorf("expected 'Would run:' in output, got:\n%s", out)
+	}
+	// Dry-run should NOT contain --continue (first launch, not relaunch).
+	if strings.Contains(out, "--continue") {
+		t.Errorf("dry-run first launch should not contain --continue, got:\n%s", out)
+	}
+}

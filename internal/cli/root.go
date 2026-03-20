@@ -103,7 +103,7 @@ Arguments after -- are forwarded to the claude process.`,
 
 			if pickerResult.Project == nil {
 				// Launch without profile.
-				return launchBare(extraArgs)
+				return launchBare(cmd, extraArgs)
 			}
 
 			proj := *pickerResult.Project
@@ -267,6 +267,11 @@ func (w wizardWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (w wizardWrapper) View() string {
 	return w.inner.View()
+}
+
+// newTeaProgram creates a Bubble Tea program for the wizard wrapper.
+func newTeaProgram(wrapper wizardWrapper) *tea.Program {
+	return tea.NewProgram(wrapper, tea.WithAltScreen())
 }
 
 // Execute runs the CLI with the given version info.

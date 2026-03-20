@@ -1,6 +1,7 @@
 package launch
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/lcrostarosa/hystak/internal/model"
@@ -46,5 +47,64 @@ func TestResolveExecutable_NotFound(t *testing.T) {
 	_, err := ResolveExecutable("hystak-nonexistent-binary-xyz")
 	if err == nil {
 		t.Fatal("ResolveExecutable for nonexistent binary should error")
+	}
+}
+
+func TestRunCommand_ExitZero(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sh not available on Windows")
+	}
+	shPath, err := ResolveExecutable("sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := RunCommand(shPath, []string{"-c", "exit 0"}, t.TempDir())
+	if err != nil {
+		t.Fatalf("RunCommand error: %v", err)
+	}
+	if code != 0 {
+		t.Errorf("expected exit code 0, got %d", code)
+	}
+}
+
+func TestRunCommand_ExitNonZero(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sh not available on Windows")
+	}
+	shPath, err := ResolveExecutable("sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	code, err := RunCommand(shPath, []string{"-c", "exit 42"}, t.TempDir())
+	if err != nil {
+		t.Fatalf("RunCommand error: %v", err)
+	}
+	if code != 42 {
+		t.Errorf("expected exit code 42, got %d", code)
+	}
+}
+
+func TestRunCommand_StdioForwarding(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("sh not available on Windows")
+	}
+	shPath, err := ResolveExecutable("sh")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Just verify it doesn't error — stdout goes to os.Stdout which is fine in tests.
+	code, err := RunCommand(shPath, []string{"-c", "echo hello >/dev/null"}, t.TempDir())
+	if err != nil {
+		t.Fatalf("RunCommand error: %v", err)
+	}
+	if code != 0 {
+		t.Errorf("expected exit code 0, got %d", code)
+	}
+}
+
+func TestRunCommand_InvalidExecutable(t *testing.T) {
+	_, err := RunCommand("/nonexistent/binary", nil, t.TempDir())
+	if err == nil {
+		t.Fatal("expected error for nonexistent executable")
 	}
 }
