@@ -3,6 +3,7 @@ package service
 import (
 	"os"
 	"path/filepath"
+	"sort"
 
 	hysterr "github.com/lcrostarosa/hystak/internal/errors"
 	"github.com/lcrostarosa/hystak/internal/model"
@@ -222,6 +223,17 @@ func (s *Service) ListProjects() []model.Project {
 // GetProject returns a project by name.
 func (s *Service) GetProject(name string) (model.Project, bool) {
 	return s.projects.Get(name)
+}
+
+// ListProjectNames returns sorted project names.
+func (s *Service) ListProjectNames() []string {
+	projects := s.projects.List()
+	names := make([]string, len(projects))
+	for i, p := range projects {
+		names[i] = p.Name
+	}
+	sort.Strings(names)
+	return names
 }
 
 // --- Project Assignment ---
@@ -543,6 +555,37 @@ func (s *Service) SaveProjectProfile(projectName, profileName string, prof profi
 	}
 	s.projects.Projects[projectName] = proj
 	return s.saveProjects()
+}
+
+// --- Profile sharing ---
+
+// ListGlobalProfiles returns all global profiles (including vanilla).
+func (s *Service) ListGlobalProfiles() ([]profile.Profile, error) {
+	return s.profiles.List()
+}
+
+// ListProjectProfiles returns the project-scoped profiles for a project.
+func (s *Service) ListProjectProfiles(projectName string) (map[string]model.ProjectProfile, error) {
+	proj, ok := s.projects.Get(projectName)
+	if !ok {
+		return nil, hysterr.ProjectNotFound(projectName)
+	}
+	return proj.Profiles, nil
+}
+
+// ExportProfile exports a global profile as YAML bytes.
+func (s *Service) ExportProfile(name string) ([]byte, error) {
+	return s.profiles.Export(name)
+}
+
+// ImportProfile imports a profile from YAML bytes into the global profiles directory.
+func (s *Service) ImportProfile(data []byte) (*profile.Profile, error) {
+	return s.profiles.Import(data)
+}
+
+// ImportProfileAs imports a profile from YAML bytes under a new name.
+func (s *Service) ImportProfileAs(data []byte, newName string) (*profile.Profile, error) {
+	return s.profiles.ImportAs(data, newName)
 }
 
 // IsEmpty returns true when the registry has no servers and no projects exist.

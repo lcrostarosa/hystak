@@ -345,6 +345,85 @@ func TestImportInvalidYAML(t *testing.T) {
 	}
 }
 
+func TestImportAsRoundTrip(t *testing.T) {
+	m := tempManager(t)
+
+	original := Profile{
+		Name:        "frontend",
+		Description: "Frontend loadout",
+		MCPs:        []string{"browser-mcp", "github"},
+		Skills:      []string{"react-patterns"},
+		EnvVars:     map[string]string{"NODE_ENV": "dev"},
+		Isolation:   IsolationLock,
+	}
+
+	if err := m.Save(original); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	data, err := m.Export("frontend")
+	if err != nil {
+		t.Fatalf("Export: %v", err)
+	}
+
+	// ImportAs with a new name should succeed even though "frontend" exists.
+	imported, err := m.ImportAs(data, "frontend-copy")
+	if err != nil {
+		t.Fatalf("ImportAs: %v", err)
+	}
+
+	if imported.Name != "frontend-copy" {
+		t.Errorf("Name = %q, want %q", imported.Name, "frontend-copy")
+	}
+	if len(imported.MCPs) != 2 {
+		t.Errorf("len(MCPs) = %d, want 2", len(imported.MCPs))
+	}
+	if imported.Isolation != IsolationLock {
+		t.Errorf("Isolation = %q, want %q", imported.Isolation, IsolationLock)
+	}
+
+	// Verify it was saved.
+	got, err := m.Get("frontend-copy")
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if got.Description != original.Description {
+		t.Errorf("Description = %q, want %q", got.Description, original.Description)
+	}
+}
+
+func TestImportAsDuplicate(t *testing.T) {
+	m := tempManager(t)
+
+	if err := m.Save(Profile{Name: "existing"}); err != nil {
+		t.Fatalf("Save: %v", err)
+	}
+
+	data := []byte("name: other\nmcps: [a]\n")
+	_, err := m.ImportAs(data, "existing")
+	if !hysterr.IsAlreadyExists(err) {
+		t.Errorf("ImportAs duplicate: got %v, want AlreadyExistsError", err)
+	}
+}
+
+func TestImportAsVanilla(t *testing.T) {
+	m := tempManager(t)
+	data := []byte("name: test\nmcps: [a]\n")
+	_, err := m.ImportAs(data, VanillaName)
+	if err == nil {
+		t.Error("ImportAs vanilla: expected error, got nil")
+	}
+}
+
+func TestImportAsEmptyName(t *testing.T) {
+	m := tempManager(t)
+	data := []byte("name: test\nmcps: [a]\n")
+	_, err := m.ImportAs(data, "")
+	if err == nil {
+		t.Error("ImportAs empty name: expected error, got nil")
+	}
+}
+
 func TestProfileIsEmpty(t *testing.T) {
 	tests := []struct {
 		name  string

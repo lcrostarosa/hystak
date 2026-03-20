@@ -137,6 +137,7 @@ Arguments after -- are forwarded to the claude process.`,
 	root.AddCommand(app.newRestoreCmd())
 	root.AddCommand(app.newManageCmd())
 	root.AddCommand(app.newSetupCmd())
+	root.AddCommand(app.newProfileCmd())
 	root.AddCommand(newVersionCmd(version, commit, date))
 
 	return root

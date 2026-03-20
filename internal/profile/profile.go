@@ -276,3 +276,29 @@ func (m *Manager) Import(data []byte) (*Profile, error) {
 
 	return &p, nil
 }
+
+// ImportAs deserializes YAML bytes into a profile, renames it, and saves.
+// This allows importing a profile under a different name to avoid conflicts.
+func (m *Manager) ImportAs(data []byte, newName string) (*Profile, error) {
+	var f profileFile
+	if err := yaml.Unmarshal(data, &f); err != nil {
+		return nil, fmt.Errorf("parsing profile YAML: %w", err)
+	}
+
+	p := fromFile(f)
+	p.Name = newName
+
+	if err := validate(p); err != nil {
+		return nil, err
+	}
+
+	if m.Exists(p.Name) {
+		return nil, hysterr.ProfileAlreadyExists(p.Name)
+	}
+
+	if err := m.Save(p); err != nil {
+		return nil, err
+	}
+
+	return &p, nil
+}

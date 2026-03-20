@@ -811,3 +811,262 @@ func TestRunCommandDryRunStillWorks(t *testing.T) {
 		t.Errorf("dry-run first launch should not contain --continue, got:\n%s", out)
 	}
 }
+
+// ---- Profile command tests ----
+
+func setupTestConfigWithProfiles(t *testing.T) string {
+	t.Helper()
+	dir := setupTestConfig(t)
+
+	// Create a global profile.
+	profilesDir := filepath.Join(dir, "profiles")
+	if err := os.MkdirAll(profilesDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	profileYAML := `name: frontend
+description: Frontend dev loadout
+mcps:
+  - browser-mcp
+  - github
+skills:
+  - react-patterns
+env:
+  NODE_ENV: development
+isolation: none
+`
+	if err := os.WriteFile(filepath.Join(profilesDir, "frontend.yaml"), []byte(profileYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	return dir
+}
+
+func TestProfileListCommand(t *testing.T) {
+	dir := setupTestConfigWithProfiles(t)
+	out, err := runCommand(t, dir, "profile", "list")
+	if err != nil {
+		t.Fatalf("profile list failed: %v", err)
+	}
+	// Should show table header and vanilla + frontend.
+	for _, want := range []string{"NAME", "SCOPE", "vanilla", "frontend", "global"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestProfileListCommandEmpty(t *testing.T) {
+	dir := t.TempDir()
+	out, err := runCommand(t, dir, "profile", "list")
+	if err != nil {
+		t.Fatalf("profile list failed: %v", err)
+	}
+	// Should at least show vanilla.
+	if !strings.Contains(out, "vanilla") {
+		t.Errorf("expected 'vanilla' in output, got:\n%s", out)
+	}
+}
+
+func TestProfileListCommandWithProject(t *testing.T) {
+	dir := setupTestConfigWithProfiles(t)
+	projDir := filepath.Join(dir, "myproject")
+
+	// Add project-scoped profiles.
+	projYAML := fmt.Sprintf(`projects:
+  myproject:
+    path: %s
+    clients: [claude-code]
+    mcps:
+      - github
+    profiles:
+      light:
+        description: Light profile
+        mcps: [github]
+    active_profile: light
+    launched: true
+`, projDir)
+	if err := os.WriteFile(filepath.Join(dir, "projects.yaml"), []byte(projYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runCommand(t, dir, "profile", "list", "--project", "myproject")
+	if err != nil {
+		t.Fatalf("profile list --project failed: %v", err)
+	}
+	if !strings.Contains(out, "light") {
+		t.Errorf("expected 'light' in output, got:\n%s", out)
+	}
+	if !strings.Contains(out, "myproject") {
+		t.Errorf("expected 'myproject' in scope column, got:\n%s", out)
+	}
+}
+
+func TestProfileExportCommand(t *testing.T) {
+	dir := setupTestConfigWithProfiles(t)
+	out, err := runCommand(t, dir, "profile", "export", "frontend")
+	if err != nil {
+		t.Fatalf("profile export failed: %v", err)
+	}
+	// Should contain YAML fields.
+	for _, want := range []string{"name: frontend", "browser-mcp", "react-patterns"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("expected %q in output, got:\n%s", want, out)
+		}
+	}
+}
+
+func TestProfileExportCommandToFile(t *testing.T) {
+	dir := setupTestConfigWithProfiles(t)
+	outFile := filepath.Join(t.TempDir(), "exported.yaml")
+	out, err := runCommand(t, dir, "profile", "export", "frontend", "-o", outFile)
+	if err != nil {
+		t.Fatalf("profile export -o failed: %v", err)
+	}
+	if !strings.Contains(out, "exported to") {
+		t.Errorf("expected 'exported to' message, got:\n%s", out)
+	}
+	data, err := os.ReadFile(outFile)
+	if err != nil {
+		t.Fatalf("reading exported file: %v", err)
+	}
+	if !strings.Contains(string(data), "name: frontend") {
+		t.Errorf("exported file should contain profile data, got:\n%s", string(data))
+	}
+}
+
+func TestProfileExportCommandNotFound(t *testing.T) {
+	dir := setupTestConfigWithProfiles(t)
+	_, err := runCommand(t, dir, "profile", "export", "nonexistent")
+	if err == nil {
+		t.Fatal("expected error for nonexistent profile")
+	}
+}
+
+func TestProfileImportCommand(t *testing.T) {
+	dir := setupTestConfigWithProfiles(t)
+
+	// Create a YAML file to import.
+	importFile := filepath.Join(t.TempDir(), "backend.yaml")
+	importYAML := `name: backend
+description: Backend loadout
+mcps:
+  - db-mcp
+skills:
+  - go-patterns
+isolation: lock
+`
+	if err := os.WriteFile(importFile, []byte(importYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runCommand(t, dir, "profile", "import", importFile)
+	if err != nil {
+		t.Fatalf("profile import failed: %v", err)
+	}
+	if !strings.Contains(out, "imported") {
+		t.Errorf("expected 'imported' message, got:\n%s", out)
+	}
+
+	// Verify the profile was saved.
+	out2, err := runCommand(t, dir, "profile", "list")
+	if err != nil {
+		t.Fatalf("profile list after import failed: %v", err)
+	}
+	if !strings.Contains(out2, "backend") {
+		t.Errorf("expected 'backend' in list after import, got:\n%s", out2)
+	}
+}
+
+func TestProfileImportCommandConflict(t *testing.T) {
+	dir := setupTestConfigWithProfiles(t)
+
+	// Try importing a profile with the same name as existing.
+	importFile := filepath.Join(t.TempDir(), "frontend.yaml")
+	importYAML := `name: frontend
+description: Conflicting profile
+mcps:
+  - other-mcp
+`
+	if err := os.WriteFile(importFile, []byte(importYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := runCommand(t, dir, "profile", "import", importFile)
+	if err == nil {
+		t.Fatal("expected error for conflicting profile name")
+	}
+	if !strings.Contains(err.Error(), "already exists") {
+		t.Errorf("expected 'already exists' error, got: %v", err)
+	}
+}
+
+func TestProfileImportCommandAsRename(t *testing.T) {
+	dir := setupTestConfigWithProfiles(t)
+
+	// Import a conflicting profile under a different name.
+	importFile := filepath.Join(t.TempDir(), "frontend.yaml")
+	importYAML := `name: frontend
+description: Conflicting profile
+mcps:
+  - other-mcp
+`
+	if err := os.WriteFile(importFile, []byte(importYAML), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	out, err := runCommand(t, dir, "profile", "import", importFile, "--as", "frontend-v2")
+	if err != nil {
+		t.Fatalf("profile import --as failed: %v", err)
+	}
+	if !strings.Contains(out, "frontend-v2") {
+		t.Errorf("expected 'frontend-v2' in output, got:\n%s", out)
+	}
+
+	// Verify it was saved.
+	out2, err := runCommand(t, dir, "profile", "list")
+	if err != nil {
+		t.Fatalf("profile list after import --as failed: %v", err)
+	}
+	if !strings.Contains(out2, "frontend-v2") {
+		t.Errorf("expected 'frontend-v2' in list, got:\n%s", out2)
+	}
+}
+
+func TestProfileImportCommandFileNotFound(t *testing.T) {
+	dir := setupTestConfigWithProfiles(t)
+	_, err := runCommand(t, dir, "profile", "import", "/nonexistent/file.yaml")
+	if err == nil {
+		t.Fatal("expected error for nonexistent file")
+	}
+}
+
+func TestProfileExportImportRoundTrip(t *testing.T) {
+	dir := setupTestConfigWithProfiles(t)
+
+	// Export the frontend profile.
+	exportFile := filepath.Join(t.TempDir(), "frontend-export.yaml")
+	_, err := runCommand(t, dir, "profile", "export", "frontend", "-o", exportFile)
+	if err != nil {
+		t.Fatalf("export failed: %v", err)
+	}
+
+	// Import under a new name.
+	out, err := runCommand(t, dir, "profile", "import", exportFile, "--as", "frontend-clone")
+	if err != nil {
+		t.Fatalf("import failed: %v", err)
+	}
+	if !strings.Contains(out, "frontend-clone") {
+		t.Errorf("expected 'frontend-clone' in output, got:\n%s", out)
+	}
+
+	// Export the clone and verify content matches.
+	out2, err := runCommand(t, dir, "profile", "export", "frontend-clone")
+	if err != nil {
+		t.Fatalf("export clone failed: %v", err)
+	}
+	for _, want := range []string{"browser-mcp", "react-patterns", "NODE_ENV"} {
+		if !strings.Contains(out2, want) {
+			t.Errorf("expected %q in cloned profile export, got:\n%s", want, out2)
+		}
+	}
+}
