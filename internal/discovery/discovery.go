@@ -78,6 +78,14 @@ type DiscoveredEnvVar struct {
 	Source Source
 }
 
+// DiscoveredPrompt is a prompt fragment found during scanning.
+type DiscoveredPrompt struct {
+	Name        string
+	Description string
+	Category    string
+	Source      Source
+}
+
 // Items holds all items found by a scan.
 type Items struct {
 	MCPs        []DiscoveredMCP
@@ -85,6 +93,7 @@ type Items struct {
 	Hooks       []DiscoveredHook
 	Permissions []DiscoveredPermission
 	EnvVars     []DiscoveredEnvVar
+	Prompts     []DiscoveredPrompt
 }
 
 // Engine scans filesystem locations for Claude Code configuration items.
@@ -113,6 +122,7 @@ func (e *Engine) Scan(projectPath string) *Items {
 	items.Hooks = e.ScanHooks(projectPath)
 	items.Permissions = e.ScanPermissions(projectPath)
 	items.EnvVars = e.ScanEnvVars(projectPath)
+	items.Prompts = e.ScanPrompts()
 	return items
 }
 
@@ -161,7 +171,8 @@ func (e *Engine) ScanMCPs(projectPath string) []DiscoveredMCP {
 	return results
 }
 
-// ScanSkills discovers skills from global and project .claude/skills/ directories.
+// ScanSkills discovers skills from global and project .claude/skills/ directories,
+// plus all skills registered in the hystak registry.
 func (e *Engine) ScanSkills(projectPath string) []DiscoveredSkill {
 	var results []DiscoveredSkill
 
@@ -175,10 +186,24 @@ func (e *Engine) ScanSkills(projectPath string) []DiscoveredSkill {
 		results = append(results, scanSkillsDir(projSkillsDir, SourceProject)...)
 	}
 
+	// Registry: all skills from hystak registry
+	if e.registry != nil {
+		for _, skill := range e.registry.ListSkills() {
+			results = append(results, DiscoveredSkill{
+				Name:        skill.Name,
+				Path:        skill.Source,
+				Description: skill.Description,
+				Source:      SourceRegistry,
+				IsManaged:   true,
+			})
+		}
+	}
+
 	return results
 }
 
-// ScanHooks discovers hooks from global and project settings files.
+// ScanHooks discovers hooks from global and project settings files,
+// plus all hooks registered in the hystak registry.
 func (e *Engine) ScanHooks(projectPath string) []DiscoveredHook {
 	var results []DiscoveredHook
 
@@ -192,10 +217,25 @@ func (e *Engine) ScanHooks(projectPath string) []DiscoveredHook {
 		results = append(results, readHooksFromSettings(projSettings, SourceProject)...)
 	}
 
+	// Registry: all hooks from hystak registry
+	if e.registry != nil {
+		for _, hook := range e.registry.ListHooks() {
+			results = append(results, DiscoveredHook{
+				Name:    hook.Name,
+				Event:   hook.Event,
+				Matcher: hook.Matcher,
+				Command: hook.Command,
+				Timeout: hook.Timeout,
+				Source:  SourceRegistry,
+			})
+		}
+	}
+
 	return results
 }
 
-// ScanPermissions discovers permission rules from global and project settings files.
+// ScanPermissions discovers permission rules from global and project settings files,
+// plus all permissions registered in the hystak registry.
 func (e *Engine) ScanPermissions(projectPath string) []DiscoveredPermission {
 	var results []DiscoveredPermission
 
@@ -207,6 +247,18 @@ func (e *Engine) ScanPermissions(projectPath string) []DiscoveredPermission {
 	if projectPath != "" {
 		projSettings := filepath.Join(projectPath, ".claude", "settings.local.json")
 		results = append(results, readPermissionsFromSettings(projSettings, SourceProject)...)
+	}
+
+	// Registry: all permissions from hystak registry
+	if e.registry != nil {
+		for _, perm := range e.registry.ListPermissions() {
+			results = append(results, DiscoveredPermission{
+				Name:   perm.Name,
+				Rule:   perm.Rule,
+				Type:   string(perm.Type),
+				Source: SourceRegistry,
+			})
+		}
 	}
 
 	return results
@@ -226,6 +278,22 @@ func (e *Engine) ScanEnvVars(projectPath string) []DiscoveredEnvVar {
 		results = append(results, readEnvVarsFromSettings(projSettings, SourceProject)...)
 	}
 
+	return results
+}
+
+// ScanPrompts discovers prompt fragments from the hystak registry.
+func (e *Engine) ScanPrompts() []DiscoveredPrompt {
+	var results []DiscoveredPrompt
+	if e.registry != nil {
+		for _, prompt := range e.registry.ListPrompts() {
+			results = append(results, DiscoveredPrompt{
+				Name:        prompt.Name,
+				Description: prompt.Description,
+				Category:    prompt.Category,
+				Source:      SourceRegistry,
+			})
+		}
+	}
 	return results
 }
 

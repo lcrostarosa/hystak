@@ -320,6 +320,52 @@ func (s *Store) UnassignPermission(projectName, permName string) error {
 	return nil
 }
 
+// AssignPrompt adds a prompt name to a project's prompts list.
+// Returns an error if the project is not found or the prompt is already assigned.
+func (s *Store) AssignPrompt(projectName, promptName string) error {
+	proj, ok := s.Projects[projectName]
+	if !ok {
+		return hysterr.ProjectNotFound(projectName)
+	}
+
+	for _, p := range proj.Prompts {
+		if p == promptName {
+			return hysterr.PromptAlreadyAssigned(promptName, projectName)
+		}
+	}
+
+	proj.Prompts = append(proj.Prompts, promptName)
+	s.Projects[projectName] = proj
+	return nil
+}
+
+// UnassignPrompt removes a prompt from a project's prompts list.
+// Returns an error if the project or prompt assignment is not found.
+func (s *Store) UnassignPrompt(projectName, promptName string) error {
+	proj, ok := s.Projects[projectName]
+	if !ok {
+		return hysterr.ProjectNotFound(projectName)
+	}
+
+	found := false
+	prompts := make([]string, 0, len(proj.Prompts))
+	for _, p := range proj.Prompts {
+		if p == promptName {
+			found = true
+			continue
+		}
+		prompts = append(prompts, p)
+	}
+
+	if !found {
+		return hysterr.PromptNotAssigned(promptName, projectName)
+	}
+
+	proj.Prompts = prompts
+	s.Projects[projectName] = proj
+	return nil
+}
+
 // SetClaudeMDTemplate sets the ClaudeMD template name for a project.
 // Returns an error if the project is not found.
 func (s *Store) SetClaudeMDTemplate(projectName, templateName string) error {

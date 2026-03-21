@@ -50,10 +50,11 @@ type PickerModel struct {
 	width    int
 	height   int
 	showLogo bool
+	version  string
 }
 
 // NewPickerModel creates a picker from the service's project list.
-func NewPickerModel(svc *service.Service) PickerModel {
+func NewPickerModel(svc *service.Service, version string) PickerModel {
 	projects := svc.ListProjects()
 
 	items := make([]list.Item, 0, len(projects)+3)
@@ -126,7 +127,7 @@ func NewPickerModel(svc *service.Service) PickerModel {
 	l.SetFilteringEnabled(true)
 	l.DisableQuitKeybindings()
 
-	return PickerModel{list: l, showLogo: true}
+	return PickerModel{list: l, showLogo: true, version: version}
 }
 
 // Result returns the picker result after the program exits, or nil if cancelled.
@@ -150,7 +151,7 @@ func (m PickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Account for status bar
 		listHeight -= 1
 		m.list.SetSize(msg.Width, max(1, listHeight))
-		return m, nil
+		return m, tea.ClearScreen
 
 	case tea.KeyMsg:
 		if m.list.FilterState() == list.Filtering {
@@ -174,9 +175,15 @@ func (m PickerModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case pickerManage:
 				m.result = &PickerResult{Manage: true}
 			case pickerConfigure:
-				// Configure operates on the selected project in the list.
-				// If the currently highlighted item is a project, configure that.
-				m.result = &PickerResult{Configure: true}
+				// Configure operates on the most recently highlighted project.
+				// Walk backward from the current index to find the nearest project.
+				proj := findNearestProject(m.list)
+				if proj != nil {
+					m.result = &PickerResult{Project: proj, Configure: true}
+				} else {
+					// No project available, fall back to manage TUI.
+					m.result = &PickerResult{Manage: true}
+				}
 			}
 			return m, tea.Quit
 
@@ -207,9 +214,26 @@ func (m PickerModel) View() string {
 		parts = append(parts, RenderLogo(m.width))
 	}
 	parts = append(parts, m.list.View())
-	hint := statusBarStyle.Render("enter: launch | c: configure | q: quit")
+	hintText := "enter: launch | c: configure | q: quit"
+	if m.version != "" {
+		hintText = fmt.Sprintf("%s  (%s)", hintText, m.version)
+	}
+	hint := statusBarStyle.Render(hintText)
 	parts = append(parts, hint)
 	return lipgloss.JoinVertical(lipgloss.Left, parts...)
+}
+
+// findNearestProject walks the list items backward from the current index
+// to find the nearest project item.
+func findNearestProject(l list.Model) *model.Project {
+	items := l.Items()
+	idx := l.Index()
+	for i := idx; i >= 0; i-- {
+		if pi, ok := items[i].(pickerItem); ok && pi.kind == pickerProject {
+			return pi.proj
+		}
+	}
+	return nil
 }
 
 // logoHeight returns the number of lines consumed by the logo.

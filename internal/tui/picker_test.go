@@ -32,7 +32,7 @@ func TestNewPickerModel_WithProjects(t *testing.T) {
 		"proj2": {Name: "proj2", Path: "/tmp/proj2", Clients: []model.ClientType{model.ClientClaudeCode}},
 	})
 
-	picker := NewPickerModel(svc)
+	picker := NewPickerModel(svc, "test")
 
 	// Should have 2 projects + 3 sentinel items = 5 items.
 	items := picker.list.Items()
@@ -60,7 +60,7 @@ func TestNewPickerModel_WithProjects(t *testing.T) {
 func TestNewPickerModel_Empty(t *testing.T) {
 	svc := newPickerTestService(map[string]model.Project{})
 
-	picker := NewPickerModel(svc)
+	picker := NewPickerModel(svc, "test")
 
 	// Should have just 3 sentinel items.
 	items := picker.list.Items()
@@ -71,7 +71,7 @@ func TestNewPickerModel_Empty(t *testing.T) {
 
 func TestPickerResult_InitiallyNil(t *testing.T) {
 	svc := newPickerTestService(map[string]model.Project{})
-	picker := NewPickerModel(svc)
+	picker := NewPickerModel(svc, "test")
 
 	if picker.Result() != nil {
 		t.Error("result should be nil before selection")
@@ -89,7 +89,7 @@ func TestPickerItem_WithCounts(t *testing.T) {
 		},
 	})
 
-	picker := NewPickerModel(svc)
+	picker := NewPickerModel(svc, "test")
 	items := picker.list.Items()
 
 	pi := items[0].(pickerItem)
@@ -108,7 +108,7 @@ func TestPickerItem_NewProjectIndicator(t *testing.T) {
 		},
 	})
 
-	picker := NewPickerModel(svc)
+	picker := NewPickerModel(svc, "test")
 	items := picker.list.Items()
 
 	pi := items[0].(pickerItem)
@@ -128,7 +128,7 @@ func TestPickerItem_ActiveProfileDisplay(t *testing.T) {
 		},
 	})
 
-	picker := NewPickerModel(svc)
+	picker := NewPickerModel(svc, "test")
 	items := picker.list.Items()
 
 	pi := items[0].(pickerItem)
@@ -147,7 +147,7 @@ func TestPickerItem_LaunchedNoProfile(t *testing.T) {
 		},
 	})
 
-	picker := NewPickerModel(svc)
+	picker := NewPickerModel(svc, "test")
 	items := picker.list.Items()
 
 	pi := items[0].(pickerItem)
@@ -169,7 +169,7 @@ func TestPickerResult_ConfigureFlag(t *testing.T) {
 		},
 	})
 
-	picker := NewPickerModel(svc)
+	picker := NewPickerModel(svc, "test")
 
 	// Simulate window size.
 	m, _ := picker.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
@@ -193,7 +193,7 @@ func TestPickerResult_ConfigureFlag(t *testing.T) {
 
 func TestPickerView_ContainsLogo(t *testing.T) {
 	svc := newPickerTestService(map[string]model.Project{})
-	picker := NewPickerModel(svc)
+	picker := NewPickerModel(svc, "test")
 
 	m, _ := picker.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
 	picker = m.(PickerModel)
@@ -206,7 +206,7 @@ func TestPickerView_ContainsLogo(t *testing.T) {
 
 func TestPickerView_ContainsConfigureOption(t *testing.T) {
 	svc := newPickerTestService(map[string]model.Project{})
-	picker := NewPickerModel(svc)
+	picker := NewPickerModel(svc, "test")
 
 	m, _ := picker.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
 	picker = m.(PickerModel)
@@ -219,7 +219,7 @@ func TestPickerView_ContainsConfigureOption(t *testing.T) {
 
 func TestPickerView_ContainsHintBar(t *testing.T) {
 	svc := newPickerTestService(map[string]model.Project{})
-	picker := NewPickerModel(svc)
+	picker := NewPickerModel(svc, "test")
 
 	m, _ := picker.Update(tea.WindowSizeMsg{Width: 80, Height: 30})
 	picker = m.(PickerModel)

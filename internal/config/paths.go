@@ -46,7 +46,7 @@ func ProjectsPath() string {
 }
 
 // subdirectories that EnsureConfigDir creates inside the config root.
-var subdirs = []string{"profiles", "skills", "templates", "backups"}
+var subdirs = []string{"profiles", "skills", "templates", "prompts", "backups"}
 
 // EnsureConfigDir creates the config directory, required subdirectories,
 // and empty config files if they do not already exist.

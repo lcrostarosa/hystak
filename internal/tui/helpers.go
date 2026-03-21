@@ -102,3 +102,20 @@ func writePermissionFields(b *strings.Builder, perm model.PermissionRule, labelS
 func writeTemplateFields(b *strings.Builder, tmpl model.TemplateDef, labelStyle lipgloss.Style) {
 	fmt.Fprintf(b, "%s %s\n", labelStyle.Render("Source:"), tmpl.Source)
 }
+
+// writePromptFields renders the fields of a PromptDef into a strings.Builder.
+func writePromptFields(b *strings.Builder, prompt model.PromptDef, labelStyle lipgloss.Style) {
+	if prompt.Description != "" {
+		fmt.Fprintf(b, "%s %s\n", labelStyle.Render("Description:"), prompt.Description)
+	}
+	fmt.Fprintf(b, "%s %s\n", labelStyle.Render("Source:"), prompt.Source)
+	if prompt.Category != "" {
+		fmt.Fprintf(b, "%s %s\n", labelStyle.Render("Category:"), prompt.Category)
+	}
+	if prompt.Order != 0 {
+		fmt.Fprintf(b, "%s %d\n", labelStyle.Render("Order:"), prompt.Order)
+	}
+	if len(prompt.Tags) > 0 {
+		fmt.Fprintf(b, "%s %s\n", labelStyle.Render("Tags:"), strings.Join(prompt.Tags, ", "))
+	}
+}

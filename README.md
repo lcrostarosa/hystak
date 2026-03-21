@@ -1,5 +1,12 @@
 # hystak
 
+[![CI](https://github.com/lcrostarosa/hystak/actions/workflows/ci.yml/badge.svg)](https://github.com/lcrostarosa/hystak/actions/workflows/ci.yml)
+[![Release](https://github.com/lcrostarosa/hystak/actions/workflows/release.yml/badge.svg)](https://github.com/lcrostarosa/hystak/actions/workflows/release.yml)
+[![Latest Release](https://img.shields.io/github/v/release/lcrostarosa/hystak)](https://github.com/lcrostarosa/hystak/releases/latest)
+[![Go Report Card](https://goreportcard.com/badge/github.com/lcrostarosa/hystak)](https://goreportcard.com/report/github.com/lcrostarosa/hystak)
+[![Go Version](https://img.shields.io/github/go-mod/go-version/lcrostarosa/hystak)](https://github.com/lcrostarosa/hystak/blob/master/go.mod)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
 A CLI/TUI tool that manages MCP server configurations, skills, hooks, and permissions from a central registry — then syncs and launches Claude Code with the right profile. Single binary, zero runtime dependencies.
 
 ## Problem

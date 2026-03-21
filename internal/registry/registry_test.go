@@ -1012,6 +1012,16 @@ func TestLoadSaveRoundTripAllEntities(t *testing.T) {
 		Source: "/templates/go-project.md",
 	})
 
+	// Prompts
+	r.AddPrompt(model.PromptDef{
+		Name:        "defensive-security",
+		Description: "Defensive-only security guardrails",
+		Source:      "prompts/defensive-security.md",
+		Tags:        []string{"security", "guardrail"},
+		Category:    "safety",
+		Order:       10,
+	})
+
 	// Tags
 	r.AddTag("core", []string{"github"})
 	r.AddTag("all", []string{"github", "remote-api"})
@@ -1152,6 +1162,30 @@ func TestLoadSaveRoundTripAllEntities(t *testing.T) {
 		t.Errorf("expected template source, got %q", gp.Source)
 	}
 
+	// Verify prompts
+	if len(r2.Prompts) != 1 {
+		t.Fatalf("expected 1 prompt, got %d", len(r2.Prompts))
+	}
+	dp, ok := r2.GetPrompt("defensive-security")
+	if !ok {
+		t.Fatal("defensive-security prompt not found after round-trip")
+	}
+	if dp.Name != "defensive-security" {
+		t.Errorf("expected prompt Name=defensive-security, got %q", dp.Name)
+	}
+	if dp.Description != "Defensive-only security guardrails" {
+		t.Errorf("expected prompt description, got %q", dp.Description)
+	}
+	if dp.Category != "safety" {
+		t.Errorf("expected prompt category=safety, got %q", dp.Category)
+	}
+	if dp.Order != 10 {
+		t.Errorf("expected prompt order=10, got %d", dp.Order)
+	}
+	if len(dp.Tags) != 2 || dp.Tags[0] != "security" {
+		t.Errorf("expected prompt tags, got %v", dp.Tags)
+	}
+
 	// Verify tags
 	if len(r2.Tags) != 2 {
 		t.Fatalf("expected 2 tags, got %d", len(r2.Tags))
@@ -1161,5 +1195,122 @@ func TestLoadSaveRoundTripAllEntities(t *testing.T) {
 	}
 	if len(r2.Tags["all"]) != 2 {
 		t.Errorf("tag all not preserved: %v", r2.Tags["all"])
+	}
+}
+
+// --- Prompt CRUD tests ---
+
+func testPrompt(name string, order int) model.PromptDef {
+	return model.PromptDef{
+		Name:        name,
+		Description: name + " prompt",
+		Source:      "prompts/" + name + ".md",
+		Category:    "test",
+		Order:       order,
+	}
+}
+
+func TestAddPrompt(t *testing.T) {
+	r := empty()
+	p := testPrompt("defensive-security", 10)
+
+	if err := r.AddPrompt(p); err != nil {
+		t.Fatalf("AddPrompt: %v", err)
+	}
+
+	got, ok := r.GetPrompt("defensive-security")
+	if !ok {
+		t.Fatal("prompt not found after AddPrompt")
+	}
+	if got.Name != "defensive-security" {
+		t.Errorf("expected Name=defensive-security, got %q", got.Name)
+	}
+	if got.Order != 10 {
+		t.Errorf("expected Order=10, got %d", got.Order)
+	}
+}
+
+func TestAddPromptDuplicate(t *testing.T) {
+	r := empty()
+	r.AddPrompt(testPrompt("my-prompt", 0))
+
+	err := r.AddPrompt(testPrompt("my-prompt", 0))
+	if err == nil {
+		t.Fatal("expected duplicate error")
+	}
+}
+
+func TestListPrompts_SortedByOrderThenName(t *testing.T) {
+	r := empty()
+	r.AddPrompt(testPrompt("zzz-prompt", 10))
+	r.AddPrompt(testPrompt("aaa-prompt", 20))
+	r.AddPrompt(testPrompt("bbb-prompt", 10))
+
+	list := r.ListPrompts()
+	if len(list) != 3 {
+		t.Fatalf("expected 3 prompts, got %d", len(list))
+	}
+
+	// Order 10: bbb, zzz (alphabetical within same order)
+	// Order 20: aaa
+	expected := []string{"bbb-prompt", "zzz-prompt", "aaa-prompt"}
+	for i, name := range expected {
+		if list[i].Name != name {
+			t.Errorf("list[%d].Name = %q, want %q", i, list[i].Name, name)
+		}
+	}
+}
+
+func TestUpdatePrompt(t *testing.T) {
+	r := empty()
+	r.AddPrompt(testPrompt("my-prompt", 10))
+
+	updated := model.PromptDef{
+		Description: "Updated description",
+		Source:      "prompts/updated.md",
+		Order:       20,
+	}
+	if err := r.UpdatePrompt("my-prompt", updated); err != nil {
+		t.Fatalf("UpdatePrompt: %v", err)
+	}
+
+	got, _ := r.GetPrompt("my-prompt")
+	if got.Description != "Updated description" {
+		t.Errorf("expected updated description, got %q", got.Description)
+	}
+	if got.Name != "my-prompt" {
+		t.Errorf("expected name preserved, got %q", got.Name)
+	}
+	if got.Order != 20 {
+		t.Errorf("expected updated order=20, got %d", got.Order)
+	}
+}
+
+func TestUpdatePromptNotFound(t *testing.T) {
+	r := empty()
+	err := r.UpdatePrompt("nonexistent", model.PromptDef{})
+	if err == nil {
+		t.Fatal("expected not-found error")
+	}
+}
+
+func TestDeletePrompt(t *testing.T) {
+	r := empty()
+	r.AddPrompt(testPrompt("my-prompt", 0))
+
+	if err := r.DeletePrompt("my-prompt"); err != nil {
+		t.Fatalf("DeletePrompt: %v", err)
+	}
+
+	if _, ok := r.GetPrompt("my-prompt"); ok {
+		t.Error("prompt still exists after DeletePrompt")
+	}
+}
+
+func TestDeletePromptNotFound(t *testing.T) {
+	r := empty()
+	err := r.DeletePrompt("nonexistent")
+	if err == nil {
+		t.Fatal("expected not-found error")
 	}
 }

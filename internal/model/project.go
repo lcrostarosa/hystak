@@ -16,6 +16,7 @@ type Project struct {
 	Skills        []string                 `yaml:"skills,omitempty"`
 	Hooks         []string                 `yaml:"hooks,omitempty"`
 	Permissions   []string                 `yaml:"permissions,omitempty"`
+	Prompts       []string                 `yaml:"prompts,omitempty"`
 	ClaudeMD      string                   `yaml:"claude_md,omitempty"`
 	Profiles      map[string]ProjectProfile `yaml:"profiles,omitempty"`
 	ActiveProfile string                   `yaml:"active_profile,omitempty"`
@@ -30,6 +31,7 @@ type ProjectProfile struct {
 	Skills      []string          `yaml:"skills,omitempty"`
 	Hooks       []string          `yaml:"hooks,omitempty"`
 	Permissions []string          `yaml:"permissions,omitempty"`
+	Prompts     []string          `yaml:"prompts,omitempty"`
 	EnvVars     map[string]string `yaml:"env,omitempty"`
 	ClaudeMD    string            `yaml:"claude_md,omitempty"`
 	Isolation   string            `yaml:"isolation,omitempty"`

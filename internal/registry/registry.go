@@ -17,17 +17,19 @@ type registryFile struct {
 	Hooks       map[string]model.HookDef       `yaml:"hooks,omitempty"`
 	Permissions map[string]model.PermissionRule `yaml:"permissions,omitempty"`
 	Templates   map[string]model.TemplateDef   `yaml:"templates,omitempty"`
+	Prompts     map[string]model.PromptDef     `yaml:"prompts,omitempty"`
 	Tags        map[string][]string            `yaml:"tags,omitempty"`
 }
 
 // Registry manages the central server catalog, skills, hooks, permissions,
-// templates, and tag groups.
+// templates, prompts, and tag groups.
 type Registry struct {
 	Servers     map[string]model.ServerDef
 	Skills      map[string]model.SkillDef
 	Hooks       map[string]model.HookDef
 	Permissions map[string]model.PermissionRule
 	Templates   map[string]model.TemplateDef
+	Prompts     map[string]model.PromptDef
 	Tags        map[string][]string
 }
 
@@ -57,6 +59,7 @@ func Load(path string) (*Registry, error) {
 		Hooks:       f.Hooks,
 		Permissions: f.Permissions,
 		Templates:   f.Templates,
+		Prompts:     f.Prompts,
 		Tags:        f.Tags,
 	}
 	if r.Servers == nil {
@@ -73,6 +76,9 @@ func Load(path string) (*Registry, error) {
 	}
 	if r.Templates == nil {
 		r.Templates = make(map[string]model.TemplateDef)
+	}
+	if r.Prompts == nil {
+		r.Prompts = make(map[string]model.PromptDef)
 	}
 	if r.Tags == nil {
 		r.Tags = make(map[string][]string)
@@ -99,6 +105,10 @@ func Load(path string) (*Registry, error) {
 		tmpl.Name = name
 		r.Templates[name] = tmpl
 	}
+	for name, prompt := range r.Prompts {
+		prompt.Name = name
+		r.Prompts[name] = prompt
+	}
 
 	return r, nil
 }
@@ -111,6 +121,7 @@ func (r *Registry) Save(path string) error {
 		Hooks:       r.Hooks,
 		Permissions: r.Permissions,
 		Templates:   r.Templates,
+		Prompts:     r.Prompts,
 		Tags:        r.Tags,
 	}
 
@@ -421,6 +432,57 @@ func (r *Registry) DeleteTemplate(name string) error {
 	return nil
 }
 
+// --- Prompts CRUD ---
+
+// AddPrompt adds a prompt fragment to the registry.
+func (r *Registry) AddPrompt(prompt model.PromptDef) error {
+	if _, exists := r.Prompts[prompt.Name]; exists {
+		return hysterr.PromptAlreadyExists(prompt.Name)
+	}
+	r.Prompts[prompt.Name] = prompt
+	return nil
+}
+
+// GetPrompt returns a prompt by name.
+func (r *Registry) GetPrompt(name string) (model.PromptDef, bool) {
+	prompt, ok := r.Prompts[name]
+	return prompt, ok
+}
+
+// ListPrompts returns all prompts sorted by (Order, Name) for deterministic composition.
+func (r *Registry) ListPrompts() []model.PromptDef {
+	prompts := make([]model.PromptDef, 0, len(r.Prompts))
+	for _, p := range r.Prompts {
+		prompts = append(prompts, p)
+	}
+	sort.Slice(prompts, func(i, j int) bool {
+		if prompts[i].Order != prompts[j].Order {
+			return prompts[i].Order < prompts[j].Order
+		}
+		return prompts[i].Name < prompts[j].Name
+	})
+	return prompts
+}
+
+// UpdatePrompt replaces an existing prompt definition. Returns an error if not found.
+func (r *Registry) UpdatePrompt(name string, prompt model.PromptDef) error {
+	if _, exists := r.Prompts[name]; !exists {
+		return hysterr.PromptNotFound(name)
+	}
+	prompt.Name = name
+	r.Prompts[name] = prompt
+	return nil
+}
+
+// DeletePrompt removes a prompt from the registry.
+func (r *Registry) DeletePrompt(name string) error {
+	if _, exists := r.Prompts[name]; !exists {
+		return hysterr.PromptNotFound(name)
+	}
+	delete(r.Prompts, name)
+	return nil
+}
+
 func empty() *Registry {
 	return &Registry{
 		Servers:     make(map[string]model.ServerDef),
@@ -428,6 +490,7 @@ func empty() *Registry {
 		Hooks:       make(map[string]model.HookDef),
 		Permissions: make(map[string]model.PermissionRule),
 		Templates:   make(map[string]model.TemplateDef),
+		Prompts:     make(map[string]model.PromptDef),
 		Tags:        make(map[string][]string),
 	}
 }

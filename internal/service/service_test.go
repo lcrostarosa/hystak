@@ -1031,19 +1031,18 @@ func TestSyncProject_SyncsSkills(t *testing.T) {
 	}
 }
 
-func TestSyncProject_SkillNotFound(t *testing.T) {
+func TestSyncProject_SkillNotInRegistrySkipped(t *testing.T) {
 	svc, _ := setupService(t)
 
 	proj := svc.projects.Projects["myproject"]
 	proj.Skills = []string{"nonexistent-skill"}
 	svc.projects.Projects["myproject"] = proj
 
+	// Skills not in registry (e.g., discovered from filesystem) should be
+	// silently skipped during sync, not cause an error.
 	_, err := svc.SyncProject("myproject")
-	if err == nil {
-		t.Fatal("expected error for missing skill")
-	}
-	if !strings.Contains(err.Error(), "nonexistent-skill") {
-		t.Errorf("expected skill name in error, got: %v", err)
+	if err != nil {
+		t.Fatalf("expected no error for missing skill, got: %v", err)
 	}
 }
 

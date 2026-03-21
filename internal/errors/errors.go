@@ -99,6 +99,7 @@ func SkillNotFound(name string) error        { return &NotFoundError{Kind: "skil
 func HookNotFound(name string) error         { return &NotFoundError{Kind: "hook", Name: name} }
 func PermissionNotFound(name string) error   { return &NotFoundError{Kind: "permission", Name: name} }
 func TemplateNotFound(name string) error     { return &NotFoundError{Kind: "template", Name: name} }
+func PromptNotFound(name string) error       { return &NotFoundError{Kind: "prompt", Name: name} }
 func TagNotFound(name string) error          { return &NotFoundError{Kind: "tag", Name: name} }
 
 func ServerAlreadyExists(name string) error     { return &AlreadyExistsError{Kind: "server", Name: name} }
@@ -108,6 +109,7 @@ func SkillAlreadyExists(name string) error      { return &AlreadyExistsError{Kin
 func HookAlreadyExists(name string) error       { return &AlreadyExistsError{Kind: "hook", Name: name} }
 func PermissionAlreadyExists(name string) error { return &AlreadyExistsError{Kind: "permission", Name: name} }
 func TemplateAlreadyExists(name string) error   { return &AlreadyExistsError{Kind: "template", Name: name} }
+func PromptAlreadyExists(name string) error     { return &AlreadyExistsError{Kind: "prompt", Name: name} }
 func TagAlreadyExists(name string) error        { return &AlreadyExistsError{Kind: "tag", Name: name} }
 
 func ServerReferenced(name, tag string) error {
@@ -126,6 +128,9 @@ func HookAlreadyAssigned(name, project string) error {
 func PermissionAlreadyAssigned(name, project string) error {
 	return &AlreadyAssignedError{Kind: "permission", Name: name, ProjectName: project}
 }
+func PromptAlreadyAssigned(name, project string) error {
+	return &AlreadyAssignedError{Kind: "prompt", Name: name, ProjectName: project}
+}
 
 func ServerNotAssigned(name, project string) error {
 	return &NotAssignedError{Kind: "server", Name: name, ProjectName: project}
@@ -138,4 +143,7 @@ func HookNotAssigned(name, project string) error {
 }
 func PermissionNotAssigned(name, project string) error {
 	return &NotAssignedError{Kind: "permission", Name: name, ProjectName: project}
+}
+func PromptNotAssigned(name, project string) error {
+	return &NotAssignedError{Kind: "prompt", Name: name, ProjectName: project}
 }

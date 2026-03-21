@@ -30,6 +30,7 @@ type Profile struct {
 	Skills      []string          `yaml:"skills,omitempty"`
 	Hooks       []string          `yaml:"hooks,omitempty"`
 	Permissions []string          `yaml:"permissions,omitempty"`
+	Prompts     []string          `yaml:"prompts,omitempty"`
 	EnvVars     map[string]string `yaml:"env,omitempty"`
 	ClaudeMD    string            `yaml:"claude_md,omitempty"`
 	Isolation   IsolationStrategy `yaml:"isolation,omitempty"`
@@ -46,6 +47,7 @@ func (p Profile) IsEmpty() bool {
 		len(p.Skills) == 0 &&
 		len(p.Hooks) == 0 &&
 		len(p.Permissions) == 0 &&
+		len(p.Prompts) == 0 &&
 		len(p.EnvVars) == 0 &&
 		p.ClaudeMD == ""
 }
@@ -67,6 +69,7 @@ type profileFile struct {
 	Skills      []string          `yaml:"skills,omitempty"`
 	Hooks       []string          `yaml:"hooks,omitempty"`
 	Permissions []string          `yaml:"permissions,omitempty"`
+	Prompts     []string          `yaml:"prompts,omitempty"`
 	EnvVars     map[string]string `yaml:"env,omitempty"`
 	ClaudeMD    string            `yaml:"claude_md,omitempty"`
 	Isolation   IsolationStrategy `yaml:"isolation,omitempty"`
@@ -80,6 +83,7 @@ func toFile(p Profile) profileFile {
 		Skills:      p.Skills,
 		Hooks:       p.Hooks,
 		Permissions: p.Permissions,
+		Prompts:     p.Prompts,
 		EnvVars:     p.EnvVars,
 		ClaudeMD:    p.ClaudeMD,
 		Isolation:   p.Isolation,
@@ -94,6 +98,7 @@ func fromFile(f profileFile) Profile {
 		Skills:      f.Skills,
 		Hooks:       f.Hooks,
 		Permissions: f.Permissions,
+		Prompts:     f.Prompts,
 		EnvVars:     f.EnvVars,
 		ClaudeMD:    f.ClaudeMD,
 		Isolation:   f.Isolation,

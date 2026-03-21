@@ -190,6 +190,42 @@ func (s *Service) GetTemplate(name string) (model.TemplateDef, bool) {
 	return s.registry.GetTemplate(name)
 }
 
+// --- Prompt CRUD ---
+
+// AddPrompt adds a prompt to the registry and saves.
+func (s *Service) AddPrompt(prompt model.PromptDef) error {
+	if err := s.registry.AddPrompt(prompt); err != nil {
+		return err
+	}
+	return s.saveRegistry()
+}
+
+// UpdatePrompt updates an existing prompt and saves.
+func (s *Service) UpdatePrompt(name string, prompt model.PromptDef) error {
+	if err := s.registry.UpdatePrompt(name, prompt); err != nil {
+		return err
+	}
+	return s.saveRegistry()
+}
+
+// DeletePrompt removes a prompt from the registry and saves.
+func (s *Service) DeletePrompt(name string) error {
+	if err := s.registry.DeletePrompt(name); err != nil {
+		return err
+	}
+	return s.saveRegistry()
+}
+
+// ListPrompts returns all prompts sorted by (Order, Name).
+func (s *Service) ListPrompts() []model.PromptDef {
+	return s.registry.ListPrompts()
+}
+
+// GetPrompt returns a prompt by name.
+func (s *Service) GetPrompt(name string) (model.PromptDef, bool) {
+	return s.registry.GetPrompt(name)
+}
+
 // --- Tag queries ---
 
 // ExpandTag returns the server names for a tag.
@@ -310,6 +346,22 @@ func (s *Service) UnassignPermission(projectName, permName string) error {
 	return s.saveProjects()
 }
 
+// AssignPrompt adds a prompt to a project and saves.
+func (s *Service) AssignPrompt(projectName, promptName string) error {
+	if err := s.projects.AssignPrompt(projectName, promptName); err != nil {
+		return err
+	}
+	return s.saveProjects()
+}
+
+// UnassignPrompt removes a prompt from a project and saves.
+func (s *Service) UnassignPrompt(projectName, promptName string) error {
+	if err := s.projects.UnassignPrompt(projectName, promptName); err != nil {
+		return err
+	}
+	return s.saveProjects()
+}
+
 // SetClaudeMDTemplate sets the template for a project and saves.
 func (s *Service) SetClaudeMDTemplate(projectName, templateName string) error {
 	if err := s.projects.SetClaudeMDTemplate(projectName, templateName); err != nil {
@@ -390,6 +442,21 @@ func (s *Service) CountPermissionProfileRefs() map[string]int {
 	for _, proj := range s.projects.List() {
 		seen := make(map[string]bool)
 		for _, name := range proj.Permissions {
+			if !seen[name] {
+				seen[name] = true
+				counts[name]++
+			}
+		}
+	}
+	return counts
+}
+
+// CountPromptProfileRefs counts how many profiles reference each prompt.
+func (s *Service) CountPromptProfileRefs() map[string]int {
+	counts := make(map[string]int)
+	for _, proj := range s.projects.List() {
+		seen := make(map[string]bool)
+		for _, name := range proj.Prompts {
 			if !seen[name] {
 				seen[name] = true
 				counts[name]++
@@ -549,6 +616,7 @@ func (s *Service) SaveProjectProfile(projectName, profileName string, prof profi
 		Skills:      prof.Skills,
 		Hooks:       prof.Hooks,
 		Permissions: prof.Permissions,
+		Prompts:     prof.Prompts,
 		EnvVars:     prof.EnvVars,
 		ClaudeMD:    prof.ClaudeMD,
 		Isolation:   string(prof.Isolation),

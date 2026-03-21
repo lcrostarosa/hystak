@@ -20,6 +20,7 @@ const (
 	HooksTab
 	PermissionsTab
 	TemplatesTab
+	PromptsTab
 	tabCount
 )
 
@@ -36,12 +37,13 @@ const (
 	ModeHookForm
 	ModePermissionForm
 	ModeTemplateForm
+	ModePromptForm
 	ModeConflictResolve
 	ModeDiscovery
 	ModeLaunchWizard
 )
 
-var tabLabels = []string{"Profiles", "MCPs", "Skills", "Hooks", "Permissions", "Templates"}
+var tabLabels = []string{"Profiles", "MCPs", "Skills", "Hooks", "Permissions", "Templates", "Prompts"}
 
 // overlay is the interface for full-screen overlay models.
 type overlay interface {
@@ -65,6 +67,7 @@ type AppModel struct {
 	hooks       HooksModel
 	permissions PermissionsModel
 	templates   TemplatesModel
+	prompts     PromptsModel
 	form        FormModel
 	importer    ImportModel
 	diff        DiffModel
@@ -73,6 +76,7 @@ type AppModel struct {
 	hookForm       HookFormModel
 	permissionForm PermissionFormModel
 	templateForm   TemplateFormModel
+	promptForm     PromptFormModel
 	conflict       ConflictModel
 	discovery      DiscoveryModel
 	launchWizard   LaunchWizardModel
@@ -96,6 +100,7 @@ func NewApp(svc *service.Service) AppModel {
 		hooks:       NewHooksModel(svc),
 		permissions: NewPermissionsModel(svc),
 		templates:   NewTemplatesModel(svc),
+		prompts:     NewPromptsModel(svc),
 	}
 }
 
@@ -116,6 +121,8 @@ func (m *AppModel) activeOverlay() overlay {
 		return &m.permissionForm
 	case ModeTemplateForm:
 		return &m.templateForm
+	case ModePromptForm:
+		return &m.promptForm
 	case ModeConflictResolve:
 		return &m.conflict
 	case ModeDiscovery:
@@ -141,7 +148,7 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if ov := m.activeOverlay(); ov != nil {
 			ov.SetSize(m.width, m.height)
 		}
-		return m, nil
+		return m, tea.ClearScreen
 
 	case RequestFormMsg:
 		if msg.EditServer != nil {
@@ -325,6 +332,35 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.mode = ModeBrowse
 		return m, nil
 
+	case RequestPromptFormMsg:
+		if msg.EditPrompt != nil {
+			m.promptForm = NewEditPromptFormModel(*msg.EditPrompt)
+		} else {
+			m.promptForm = NewPromptFormModel()
+		}
+		m.promptForm.SetSize(m.width, m.height)
+		m.mode = ModePromptForm
+		return m, nil
+
+	case PromptFormSubmittedMsg:
+		m.mode = ModeBrowse
+		m.err = nil
+		var err error
+		if msg.IsEdit {
+			err = m.service.UpdatePrompt(m.promptForm.editName, msg.Prompt)
+		} else {
+			err = m.service.AddPrompt(msg.Prompt)
+		}
+		if err != nil {
+			m.err = err
+		}
+		m.prompts.refreshList()
+		return m, nil
+
+	case PromptFormCancelledMsg:
+		m.mode = ModeBrowse
+		return m, nil
+
 	case RequestConflictResolveMsg:
 		m.conflict = NewConflictModel(msg.ProjectName, msg.Conflicts)
 		m.conflict.SetSize(m.width, m.height)
@@ -426,6 +462,13 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, cmd
 		}
 
+		// In prompt form mode, route all input to the prompt form.
+		if m.mode == ModePromptForm {
+			var cmd tea.Cmd
+			m.promptForm, cmd = m.promptForm.Update(msg)
+			return m, cmd
+		}
+
 		// In conflict resolve mode, route all input to the conflict model.
 		if m.mode == ModeConflictResolve {
 			var cmd tea.Cmd
@@ -492,6 +535,8 @@ func (m AppModel) activeTabConsuming() bool {
 		return m.permissions.IsConsuming()
 	case TemplatesTab:
 		return m.templates.IsConsuming()
+	case PromptsTab:
+		return m.prompts.IsConsuming()
 	}
 	return false
 }
@@ -523,6 +568,10 @@ func (m AppModel) updateActiveTab(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.templates, cmd = m.templates.Update(msg)
 		return m, cmd
+	case PromptsTab:
+		var cmd tea.Cmd
+		m.prompts, cmd = m.prompts.Update(msg)
+		return m, cmd
 	}
 	return m, nil
 }
@@ -536,6 +585,7 @@ func (m *AppModel) updateContentSize() {
 	m.hooks.SetSize(m.width, contentHeight)
 	m.permissions.SetSize(m.width, contentHeight)
 	m.templates.SetSize(m.width, contentHeight)
+	m.prompts.SetSize(m.width, contentHeight)
 }
 
 // contentHeight returns the height available for tab content.
@@ -573,6 +623,8 @@ func (m AppModel) View() string {
 		content = m.permissions.View()
 	case TemplatesTab:
 		content = m.templates.View()
+	case PromptsTab:
+		content = m.prompts.View()
 	}
 
 	statusBar := m.renderStatusBar()
@@ -622,6 +674,8 @@ func (m AppModel) renderStatusBar() string {
 		help = m.permissions.StatusHelp()
 	case TemplatesTab:
 		help = m.templates.StatusHelp()
+	case PromptsTab:
+		help = m.prompts.StatusHelp()
 	default:
 		help = "tab: switch tabs | q: quit"
 	}

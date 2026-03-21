@@ -126,7 +126,7 @@ func (m WizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		inputWidth := clamp(m.width-10, 30, 70)
 		m.nameInput.Width = inputWidth
 		m.pathInput.Width = inputWidth
-		return m, nil
+		return m, tea.ClearScreen
 
 	case scanCompleteMsg:
 		m.scanResults = msg.results

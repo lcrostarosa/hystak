@@ -56,11 +56,11 @@ func TestTabSwitchingPrev(t *testing.T) {
 	m, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	app = m.(AppModel)
 
-	// Press shift+tab to go back (wraps to last tab: TemplatesTab).
+	// Press shift+tab to go back (wraps to last tab: PromptsTab).
 	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyShiftTab}))
 	app = m.(AppModel)
-	if app.activeTab != TemplatesTab {
-		t.Errorf("expected TemplatesTab after shift+tab, got %d", app.activeTab)
+	if app.activeTab != PromptsTab {
+		t.Errorf("expected PromptsTab after shift+tab, got %d", app.activeTab)
 	}
 }
 

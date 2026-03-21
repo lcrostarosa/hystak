@@ -1,0 +1,8 @@
+projects:
+  demo:
+    name: demo
+    path: /tmp/hystak-e2e-demo
+    clients:
+      - claude_code
+    mcps:
+      - github

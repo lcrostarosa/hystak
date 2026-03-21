@@ -21,6 +21,7 @@ const (
 	launchStepPermissions
 	launchStepHooks
 	launchStepClaudeMD
+	launchStepPrompts
 	launchStepEnvVars
 	launchStepIsolation
 	launchStepCount // sentinel for step count
@@ -32,6 +33,7 @@ var launchStepLabels = []string{
 	"Permissions",
 	"Hooks",
 	"CLAUDE.md",
+	"Prompts",
 	"Env Vars",
 	"Isolation",
 }
@@ -86,7 +88,8 @@ type LaunchWizardModel struct {
 	mcpSelections   map[string]bool
 	skillSelections map[string]bool
 	permSelections  map[string]bool
-	hookSelections  map[string]bool
+	hookSelections    map[string]bool
+	promptSelections  map[string]bool
 
 	// CLAUDE.md: index into discovered templates, -1 = none
 	claudeMDOptions []string // available template names/paths
@@ -128,10 +131,11 @@ func NewLaunchWizardModel(
 		phase:           phaseSteps,
 		step:            launchStepMCPs,
 		discovered:      discovered,
-		mcpSelections:   make(map[string]bool),
-		skillSelections: make(map[string]bool),
-		permSelections:  make(map[string]bool),
-		hookSelections:  make(map[string]bool),
+		mcpSelections:    make(map[string]bool),
+		skillSelections:  make(map[string]bool),
+		permSelections:   make(map[string]bool),
+		hookSelections:   make(map[string]bool),
+		promptSelections: make(map[string]bool),
 		claudeMDChoice:  -1,
 		isolation:       profile.IsolationNone,
 	}
@@ -154,6 +158,9 @@ func NewLaunchWizardModel(
 		}
 		for _, name := range existingProfile.Hooks {
 			m.hookSelections[name] = true
+		}
+		for _, name := range existingProfile.Prompts {
+			m.promptSelections[name] = true
 		}
 		for k, v := range existingProfile.EnvVars {
 			m.envKeys = append(m.envKeys, k)
@@ -192,7 +199,7 @@ func (m LaunchWizardModel) Update(msg tea.Msg) (LaunchWizardModel, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width = msg.Width
 		m.height = msg.Height
-		return m, nil
+		return m, tea.ClearScreen
 
 	case tea.KeyMsg:
 		return m.handleKey(msg)
@@ -296,6 +303,8 @@ func (m LaunchWizardModel) handleStepInput(msg tea.KeyMsg) (LaunchWizardModel, t
 		return m.updateMultiSelect(msg, m.hookItems(), m.hookSelections)
 	case launchStepClaudeMD:
 		return m.updateRadioSelect(msg, len(m.claudeMDOptions), &m.claudeMDCursor, &m.claudeMDChoice)
+	case launchStepPrompts:
+		return m.updateMultiSelect(msg, m.promptItems(), m.promptSelections)
 	case launchStepEnvVars:
 		return m.updateEnvVars(msg)
 	case launchStepIsolation:
@@ -464,6 +473,25 @@ func (m LaunchWizardModel) hookItems() []wizardItem {
 	return items
 }
 
+func (m LaunchWizardModel) promptItems() []wizardItem {
+	if m.discovered == nil {
+		return nil
+	}
+	items := make([]wizardItem, len(m.discovered.Prompts))
+	for i, prompt := range m.discovered.Prompts {
+		desc := prompt.Description
+		if desc == "" && prompt.Category != "" {
+			desc = prompt.Category
+		}
+		items[i] = wizardItem{
+			name:   prompt.Name,
+			desc:   desc,
+			source: prompt.Source.String(),
+		}
+	}
+	return items
+}
+
 func formatMCPDesc(mcp discovery.DiscoveredMCP) string {
 	srv := mcp.ServerDef
 	switch srv.Transport {
@@ -503,6 +531,11 @@ func (m LaunchWizardModel) buildProfile() profile.Profile {
 	for name, sel := range m.hookSelections {
 		if sel {
 			p.Hooks = append(p.Hooks, name)
+		}
+	}
+	for name, sel := range m.promptSelections {
+		if sel {
+			p.Prompts = append(p.Prompts, name)
 		}
 	}
 
@@ -560,39 +593,53 @@ func (m LaunchWizardModel) View() string {
 
 // renderSequentialView renders the step-by-step wizard view.
 func (m LaunchWizardModel) renderSequentialView() string {
-	var b strings.Builder
-
-	// Progress indicator
-	b.WriteString(m.renderProgress())
-	b.WriteString("\n\n")
-
-	// Step title
+	// Build header and footer, measure their heights, give the rest to content.
+	var header strings.Builder
+	header.WriteString(m.renderProgress())
+	header.WriteString("\n\n")
 	title := launchStepLabels[m.step]
-	b.WriteString(formTitleStyle.Render(fmt.Sprintf("Step %d/%d: %s", m.step+1, int(launchStepCount), title)))
-	b.WriteString("\n\n")
+	header.WriteString(formTitleStyle.Render(fmt.Sprintf("Step %d/%d: %s", m.step+1, int(launchStepCount), title)))
+	header.WriteString("\n\n")
+	headerStr := header.String()
 
-	// Step content
-	m.renderStepContent(&b)
-
-	// Navigation hints
-	b.WriteString("\n")
+	var footer strings.Builder
+	footer.WriteString("\n")
 	if m.step == launchStepCount-1 {
-		b.WriteString(formHintStyle.Render("space: select | enter: review | esc: back | tab: skip"))
+		footer.WriteString(formHintStyle.Render("space: select | enter: review | esc: back | tab: skip"))
 	} else {
-		b.WriteString(formHintStyle.Render("space: toggle | enter: next | esc: back | tab: skip | a: toggle all"))
+		footer.WriteString(formHintStyle.Render("space: toggle | enter: next | esc: back | tab: skip | a: toggle all"))
 	}
+	footerStr := footer.String()
+
+	// formBoxStyle adds border(2 lines) + padding(2 lines) = 4 lines of chrome.
+	boxChrome := 4
+	headerHeight := lipgloss.Height(headerStr)
+	footerHeight := lipgloss.Height(footerStr)
+	contentBudget := m.height - boxChrome - headerHeight - footerHeight
+
+	var b strings.Builder
+	b.WriteString(headerStr)
+	m.renderStepContentSized(&b, contentBudget)
+	b.WriteString(footerStr)
 
 	formWidth := clamp(m.width-4, 40, 80)
 	content := formBoxStyle.Width(formWidth).Render(b.String())
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+	return truncateHeight(
+		lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content),
+		m.height,
+	)
 }
 
 // renderHubView renders the hub mode with category menu and editing pane.
 func (m LaunchWizardModel) renderHubView() string {
-	var b strings.Builder
+	// Build header and footer, measure their heights, give the rest to the panels.
+	headerStr := formTitleStyle.Render("Configure Profile") + "\n\n"
+	footerStr := "\n" + formHintStyle.Render("tab/shift+tab: category | space: toggle | enter: review | esc: cancel")
 
-	b.WriteString(formTitleStyle.Render("Configure Profile"))
-	b.WriteString("\n\n")
+	boxChrome := 4
+	headerHeight := lipgloss.Height(headerStr)
+	footerHeight := lipgloss.Height(footerStr)
+	panelBudget := m.height - boxChrome - headerHeight - footerHeight
 
 	// Left: category menu with selection counts
 	var left strings.Builder
@@ -612,11 +659,15 @@ func (m LaunchWizardModel) renderHubView() string {
 		left.WriteString("\n")
 	}
 
-	// Right: editing pane for current step
+	// Right: editing pane for current step.
+	// The right pane header consumes 2 lines (title + blank).
+	rightHeaderStr := detailTitleStyle.Render(launchStepLabels[m.step]) + "\n\n"
+	rightHeaderHeight := lipgloss.Height(rightHeaderStr)
+	contentBudget := panelBudget - rightHeaderHeight
+
 	var right strings.Builder
-	right.WriteString(detailTitleStyle.Render(launchStepLabels[m.step]))
-	right.WriteString("\n\n")
-	m.renderStepContent(&right)
+	right.WriteString(rightHeaderStr)
+	m.renderStepContentSized(&right, contentBudget)
 
 	leftWidth := 30
 	rightWidth := clamp(m.width-leftWidth-10, 20, 60)
@@ -624,13 +675,17 @@ func (m LaunchWizardModel) renderHubView() string {
 	leftRendered := lipgloss.NewStyle().Width(leftWidth).Render(left.String())
 	rightRendered := detailPaneStyle.Width(rightWidth).Render(right.String())
 
+	var b strings.Builder
+	b.WriteString(headerStr)
 	b.WriteString(lipgloss.JoinHorizontal(lipgloss.Top, leftRendered, rightRendered))
-	b.WriteString("\n")
-	b.WriteString(formHintStyle.Render("tab/shift+tab: category | space: toggle | enter: review | esc: cancel"))
+	b.WriteString(footerStr)
 
 	formWidth := clamp(m.width-4, 40, 100)
 	content := formBoxStyle.Width(formWidth).Render(b.String())
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+	return truncateHeight(
+		lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content),
+		m.height,
+	)
 }
 
 // renderChecklistView renders the review & confirm checklist.
@@ -648,6 +703,7 @@ func (m LaunchWizardModel) renderChecklistView() string {
 		{"Skills", m.selectedNames(m.skillSelections)},
 		{"Permissions", m.selectedNames(m.permSelections)},
 		{"Hooks", m.selectedNames(m.hookSelections)},
+		{"Prompts", m.selectedNames(m.promptSelections)},
 	}
 
 	for _, sec := range sections {
@@ -697,22 +753,27 @@ func (m LaunchWizardModel) renderChecklistView() string {
 
 	formWidth := clamp(m.width-4, 40, 80)
 	content := formBoxStyle.Width(formWidth).Render(b.String())
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
+	return truncateHeight(
+		lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content),
+		m.height,
+	)
 }
 
-// renderStepContent renders the content for the current step.
-func (m LaunchWizardModel) renderStepContent(b *strings.Builder) {
+// renderStepContentSized renders the content for the current step within the given line budget.
+func (m LaunchWizardModel) renderStepContentSized(b *strings.Builder, availHeight int) {
 	switch m.step {
 	case launchStepMCPs:
-		m.renderMultiSelect(b, m.mcpItems(), m.mcpSelections, "No MCP servers discovered. Add servers in the management TUI.")
+		m.renderMultiSelect(b, m.mcpItems(), m.mcpSelections, "No MCP servers discovered. Add servers in the management TUI.", availHeight)
 	case launchStepSkills:
-		m.renderMultiSelect(b, m.skillItems(), m.skillSelections, "No skills discovered. Add skills in the management TUI.")
+		m.renderMultiSelect(b, m.skillItems(), m.skillSelections, "No skills discovered. Add skills in the management TUI.", availHeight)
 	case launchStepPermissions:
-		m.renderMultiSelect(b, m.permItems(), m.permSelections, "No permissions discovered.")
+		m.renderMultiSelect(b, m.permItems(), m.permSelections, "No permissions discovered.", availHeight)
 	case launchStepHooks:
-		m.renderMultiSelect(b, m.hookItems(), m.hookSelections, "No hooks discovered.")
+		m.renderMultiSelect(b, m.hookItems(), m.hookSelections, "No hooks discovered.", availHeight)
 	case launchStepClaudeMD:
 		m.renderClaudeMD(b)
+	case launchStepPrompts:
+		m.renderMultiSelect(b, m.promptItems(), m.promptSelections, "No prompts available. Add prompts in the management TUI.", availHeight)
 	case launchStepEnvVars:
 		m.renderEnvVars(b)
 	case launchStepIsolation:
@@ -735,14 +796,32 @@ func (m LaunchWizardModel) renderProgress() string {
 	return strings.Join(parts, " > ")
 }
 
-func (m LaunchWizardModel) renderMultiSelect(b *strings.Builder, items []wizardItem, selections map[string]bool, emptyMsg string) {
+func (m LaunchWizardModel) renderMultiSelect(b *strings.Builder, items []wizardItem, selections map[string]bool, emptyMsg string, availHeight int) {
 	if len(items) == 0 {
 		b.WriteString(formHintStyle.Render(emptyMsg))
 		return
 	}
 
 	cursor := m.cursors[m.step]
-	maxVisible := clamp(m.height-14, 5, 30)
+
+	// Reserve lines for non-item content within this function:
+	//   footer: "\n" + "N/N selected" = 2 lines
+	//   scroll indicators: "... more above" + "... more below" = up to 2 lines
+	itemBudget := availHeight - 4
+
+	// Items with descriptions take 2 lines each; without, 1 line.
+	hasDescs := false
+	for _, item := range items {
+		if item.desc != "" {
+			hasDescs = true
+			break
+		}
+	}
+	linesPerItem := 1
+	if hasDescs {
+		linesPerItem = 2
+	}
+	maxVisible := clamp(itemBudget/linesPerItem, 1, len(items))
 	start, end := visibleRange(cursor, len(items), maxVisible)
 
 	if start > 0 {
@@ -863,6 +942,8 @@ func (m LaunchWizardModel) selectionSummary(step launchStep) string {
 			return m.claudeMDOptions[m.claudeMDChoice]
 		}
 		return "(none)"
+	case launchStepPrompts:
+		return fmt.Sprintf("(%d)", countSelected(m.promptSelections))
 	case launchStepEnvVars:
 		return fmt.Sprintf("(%d)", len(m.envKeys))
 	case launchStepIsolation:
@@ -880,6 +961,17 @@ func countSelected(selections map[string]bool) int {
 		}
 	}
 	return n
+}
+
+// truncateHeight ensures the rendered output never exceeds maxLines.
+// If content fits, it is returned unchanged. Otherwise lines are trimmed
+// from the bottom so the viewport always starts at line 1.
+func truncateHeight(s string, maxLines int) string {
+	lines := strings.Split(s, "\n")
+	if len(lines) <= maxLines {
+		return s
+	}
+	return strings.Join(lines[:maxLines], "\n")
 }
 
 // visibleRange calculates the visible window for a scrollable list.

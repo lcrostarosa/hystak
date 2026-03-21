@@ -15,14 +15,15 @@ import (
 
 // cliApp holds the shared service instance for all subcommands.
 type cliApp struct {
-	svc *service.Service
+	svc     *service.Service
+	version string
 }
 
 // newRootCmd builds the full command tree.
 func newRootCmd(version, commit, date string) *cobra.Command {
 	var cfgDir string
 	var configure string
-	app := &cliApp{}
+	app := &cliApp{version: version}
 
 	root := &cobra.Command{
 		Use:   "hystak [-- claude-args...]",
@@ -84,7 +85,7 @@ Arguments after -- are forwarded to the claude process.`,
 			}
 
 			// Show picker.
-			picker := tui.NewPickerModel(app.svc)
+			picker := tui.NewPickerModel(app.svc, app.version)
 			p := tea.NewProgram(picker, tea.WithAltScreen())
 			result, err := p.Run()
 			if err != nil {
@@ -101,6 +102,12 @@ Arguments after -- are forwarded to the claude process.`,
 				return app.runManageTUI(cmd, extraArgs)
 			}
 
+			// Configure mode: open wizard in hub mode (check before nil-project fallthrough).
+			if pickerResult.Configure && pickerResult.Project != nil {
+				proj := *pickerResult.Project
+				return app.runWizardAndLaunch(cmd, proj.Name, tui.LWModeHub, extraArgs)
+			}
+
 			if pickerResult.Project == nil {
 				// Launch without profile.
 				return launchBare(cmd, extraArgs)
@@ -108,18 +115,13 @@ Arguments after -- are forwarded to the claude process.`,
 
 			proj := *pickerResult.Project
 
-			// Configure mode: open wizard in hub mode.
-			if pickerResult.Configure {
-				return app.runWizardAndLaunch(cmd, proj.Name, tui.LWModeHub, extraArgs)
-			}
-
-			// First-time launch: open wizard in sequential mode.
+			// First-time launch: walk through all steps sequentially.
+			// Returning project: open hub mode so user can review/change profile.
+			mode := tui.LWModeHub
 			if !app.svc.HasLaunched(proj.Name) {
-				return app.runWizardAndLaunch(cmd, proj.Name, tui.LWModeSequential, extraArgs)
+				mode = tui.LWModeSequential
 			}
-
-			// Returning project with active profile: sync and launch.
-			return app.syncAndLaunch(cmd, proj, extraArgs, false, false)
+			return app.runWizardAndLaunch(cmd, proj.Name, mode, extraArgs)
 		},
 		SilenceUsage: true,
 	}

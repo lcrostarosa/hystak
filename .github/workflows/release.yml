@@ -2,14 +2,14 @@ name: Release
 
 on:
   push:
-    tags:
-      - "v*"
+    branches: [master]
 
 permissions:
   contents: write
 
 jobs:
   release:
+    if: "!contains(github.event.head_commit.message, '[skip release]')"
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -24,6 +24,18 @@ jobs:
 
       - name: Run tests
         run: go test ./...
+
+      - name: Auto-tag
+        id: tag
+        uses: anothrNick/github-tag-action@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          WITH_V: true
+          DEFAULT_BUMP: patch
+          RELEASE_BRANCHES: master
+
+      - name: Fetch tags
+        run: git fetch --tags
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v6

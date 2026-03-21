@@ -86,6 +86,7 @@ type effectiveConfig struct {
 	skills      []string                          // skill names to look up in registry
 	hooks       []string                          // hook names to look up in registry
 	permissions []string                          // permission names to look up in registry
+	prompts     []string                          // prompt names to look up in registry
 	claudeMD    string                            // template name to look up in registry
 }
 
@@ -287,6 +288,7 @@ func (s *Service) configFromProject(proj model.Project) (effectiveConfig, error)
 		skills:      proj.Skills,
 		hooks:       proj.Hooks,
 		permissions: proj.Permissions,
+		prompts:     proj.Prompts,
 		claudeMD:    proj.ClaudeMD,
 	}, nil
 }
@@ -300,6 +302,7 @@ func configFromProfile(proj model.Project, prof *profile.Profile) effectiveConfi
 		skills:      prof.Skills,
 		hooks:       prof.Hooks,
 		permissions: prof.Permissions,
+		prompts:     prof.Prompts,
 		claudeMD:    prof.ClaudeMD,
 	}
 }
@@ -349,7 +352,8 @@ func (s *Service) loadProfile(proj model.Project, name string) (*profile.Profile
 // hasAssignments returns true if a project has any direct resource assignments.
 func hasAssignments(proj model.Project) bool {
 	return len(proj.MCPs) > 0 || len(proj.Tags) > 0 || len(proj.Skills) > 0 ||
-		len(proj.Hooks) > 0 || len(proj.Permissions) > 0 || proj.ClaudeMD != ""
+		len(proj.Hooks) > 0 || len(proj.Permissions) > 0 || len(proj.Prompts) > 0 ||
+		proj.ClaudeMD != ""
 }
 
 // migrateToDefaultProfile creates a "default" project-scoped profile from the
@@ -385,6 +389,7 @@ func (s *Service) migrateToDefaultProfile(projectName string) error {
 		Skills:      proj.Skills,
 		Hooks:       proj.Hooks,
 		Permissions: proj.Permissions,
+		Prompts:     proj.Prompts,
 		ClaudeMD:    proj.ClaudeMD,
 	}
 
@@ -492,6 +497,10 @@ func (s *Service) syncWithConfig(proj model.Project, cfg effectiveConfig) ([]Syn
 	proj.ManagedMCPs = managedNames
 	s.projects.Projects[proj.Name] = proj
 
+	if err := s.saveProjects(); err != nil {
+		return nil, fmt.Errorf("saving managed MCPs for project %q: %w", proj.Name, err)
+	}
+
 	// Sync skills.
 	if err := s.syncSkills(proj.Path, cfg.skills); err != nil {
 		return nil, fmt.Errorf("syncing skills for project %q: %w", proj.Name, err)
@@ -502,8 +511,8 @@ func (s *Service) syncWithConfig(proj model.Project, cfg effectiveConfig) ([]Syn
 		return nil, fmt.Errorf("syncing settings for project %q: %w", proj.Name, err)
 	}
 
-	// Sync CLAUDE.md template.
-	if err := s.syncClaudeMD(proj.Path, cfg.claudeMD); err != nil {
+	// Sync CLAUDE.md template and prompt fragments.
+	if err := s.syncClaudeMD(proj.Path, cfg.claudeMD, cfg.prompts); err != nil {
 		return nil, fmt.Errorf("syncing CLAUDE.md for project %q: %w", proj.Name, err)
 	}
 
@@ -531,7 +540,9 @@ func (s *Service) syncSkills(projectPath string, skillNames []string) error {
 	for _, name := range skillNames {
 		skill, ok := s.registry.GetSkill(name)
 		if !ok {
-			return hysterr.SkillNotFound(name)
+			// Not in registry — likely discovered from the filesystem
+			// and already deployed. Skip silently.
+			continue
 		}
 		skills = append(skills, skill)
 	}
@@ -553,7 +564,9 @@ func (s *Service) syncSettings(projectPath string, hookNames, permNames []string
 	for _, name := range hookNames {
 		hook, ok := s.registry.GetHook(name)
 		if !ok {
-			return hysterr.HookNotFound(name)
+			// Not in registry — likely discovered from the filesystem
+			// and already deployed. Skip silently.
+			continue
 		}
 		hooks = append(hooks, hook)
 	}
@@ -562,7 +575,9 @@ func (s *Service) syncSettings(projectPath string, hookNames, permNames []string
 	for _, name := range permNames {
 		perm, ok := s.registry.GetPermission(name)
 		if !ok {
-			return hysterr.PermissionNotFound(name)
+			// Not in registry — likely discovered from the filesystem
+			// and already deployed. Skip silently.
+			continue
 		}
 		permissions = append(permissions, perm)
 	}
@@ -570,18 +585,109 @@ func (s *Service) syncSettings(projectPath string, hookNames, permNames []string
 	return s.settingsDeployer.SyncSettings(projectPath, hooks, permissions)
 }
 
-// syncClaudeMD resolves the template from the registry and deploys CLAUDE.md.
-func (s *Service) syncClaudeMD(projectPath string, templateName string) error {
-	if s.claudeMDDeployer == nil || templateName == "" {
+// syncClaudeMD resolves the template and prompt fragments from the registry and deploys CLAUDE.md.
+func (s *Service) syncClaudeMD(projectPath string, templateName string, promptNames []string) error {
+	if s.claudeMDDeployer == nil {
 		return nil
 	}
 
-	tmpl, ok := s.registry.GetTemplate(templateName)
-	if !ok {
-		return hysterr.TemplateNotFound(templateName)
+	var templateSource string
+	if templateName != "" {
+		tmpl, ok := s.registry.GetTemplate(templateName)
+		if !ok {
+			return hysterr.TemplateNotFound(templateName)
+		}
+		templateSource = tmpl.Source
 	}
 
-	return s.claudeMDDeployer.SyncClaudeMD(projectPath, tmpl.Source)
+	promptSources := s.resolvePromptSources(promptNames)
+
+	if templateSource == "" && len(promptSources) == 0 {
+		return nil
+	}
+
+	return s.claudeMDDeployer.SyncClaudeMD(projectPath, templateSource, promptSources)
+}
+
+// resolvePromptSources resolves prompt names to source file paths, sorted by (Order, Name)
+// with deduplication. Missing registry entries are silently skipped.
+func (s *Service) resolvePromptSources(promptNames []string) []string {
+	if len(promptNames) == 0 {
+		return nil
+	}
+
+	type entry struct {
+		order  int
+		name   string
+		source string
+	}
+
+	seen := make(map[string]bool)
+	var entries []entry
+	for _, name := range promptNames {
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		prompt, ok := s.registry.GetPrompt(name)
+		if !ok {
+			continue // not in registry, skip silently
+		}
+		source := prompt.Source
+		// Expand relative paths to be relative to configDir.
+		if source != "" && !filepath.IsAbs(source) && source[0] != '~' {
+			source = filepath.Join(s.configDir, source)
+		}
+		entries = append(entries, entry{prompt.Order, prompt.Name, source})
+	}
+
+	sort.SliceStable(entries, func(i, j int) bool {
+		if entries[i].order != entries[j].order {
+			return entries[i].order < entries[j].order
+		}
+		return entries[i].name < entries[j].name
+	})
+
+	sources := make([]string, len(entries))
+	for i, e := range entries {
+		sources[i] = e.source
+	}
+	return sources
+}
+
+// PreviewComposedPrompts reads and composes prompt fragment contents for preview
+// without deploying. Returns the composed text that would be written to CLAUDE.md.
+func (s *Service) PreviewComposedPrompts(promptNames []string, templateName string) (string, error) {
+	var buf strings.Builder
+
+	if templateName != "" {
+		tmpl, ok := s.registry.GetTemplate(templateName)
+		if !ok {
+			return "", hysterr.TemplateNotFound(templateName)
+		}
+		source := tmpl.Source
+		if source != "" && !filepath.IsAbs(source) && source[0] != '~' {
+			source = filepath.Join(s.configDir, source)
+		}
+		content, err := os.ReadFile(source)
+		if err != nil {
+			return "", fmt.Errorf("reading template %q: %w", source, err)
+		}
+		buf.Write(content)
+		buf.WriteString("\n\n")
+	}
+
+	promptSources := s.resolvePromptSources(promptNames)
+	for _, ps := range promptSources {
+		content, err := os.ReadFile(ps)
+		if err != nil {
+			return "", fmt.Errorf("reading prompt %q: %w", ps, err)
+		}
+		buf.Write(content)
+		buf.WriteString("\n\n")
+	}
+
+	return buf.String(), nil
 }
 
 // SyncAll syncs all projects and returns results keyed by project name.
