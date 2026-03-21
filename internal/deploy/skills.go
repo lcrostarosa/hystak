@@ -22,7 +22,7 @@ func (d *SkillsDeployer) SyncSkills(projectPath string, skills []model.SkillDef)
 	d.migrateLegacyMarker(skillsDir)
 
 	if len(skills) == 0 {
-		return d.cleanManagedSymlinks(skillsDir, nil)
+		return d.cleanStaleSkills(skillsDir, nil)
 	}
 
 	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
@@ -66,12 +66,13 @@ func (d *SkillsDeployer) SyncSkills(projectPath string, skills []model.SkillDef)
 		}
 	}
 
-	return d.cleanManagedSymlinks(skillsDir, currentSet)
+	return d.cleanStaleSkills(skillsDir, currentSet)
 }
 
-// cleanManagedSymlinks removes skill directories that contain a symlinked SKILL.md
-// but are not in the current set.
-func (d *SkillsDeployer) cleanManagedSymlinks(skillsDir string, current map[string]bool) error {
+// cleanStaleSkills removes skill directories not in the current set.
+// Both symlinked (hystak-managed) and regular-file skills are removed
+// if they are not selected in the active profile.
+func (d *SkillsDeployer) cleanStaleSkills(skillsDir string, current map[string]bool) error {
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -89,11 +90,11 @@ func (d *SkillsDeployer) cleanManagedSymlinks(skillsDir string, current map[stri
 			continue
 		}
 
+		// Remove any skill directory not in the current set.
 		skillFile := filepath.Join(skillsDir, name, "SKILL.md")
-		if isSymlink(skillFile) {
+		if _, err := os.Stat(skillFile); err == nil {
 			os.RemoveAll(filepath.Join(skillsDir, name))
 		}
-		// Non-symlink directories are unmanaged — leave them.
 	}
 
 	return nil

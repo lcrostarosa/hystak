@@ -93,19 +93,19 @@ func TestSkillsDeployer_RemovesManagedSymlinks(t *testing.T) {
 	}
 }
 
-func TestSkillsDeployer_PreservesUnmanaged(t *testing.T) {
+func TestSkillsDeployer_RemovesStaleSkills(t *testing.T) {
 	projectDir := t.TempDir()
 
-	// Create an unmanaged skill directory with a regular file.
-	unmanagedDir := filepath.Join(projectDir, ".claude", "skills", "user-skill")
-	if err := os.MkdirAll(unmanagedDir, 0o755); err != nil {
+	// Create a skill directory with a regular file (not in profile).
+	staleDir := filepath.Join(projectDir, ".claude", "skills", "stale-skill")
+	if err := os.MkdirAll(staleDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(unmanagedDir, "SKILL.md"), []byte("user content"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(staleDir, "SKILL.md"), []byte("stale content"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 
-	// Create a skill source.
+	// Create a skill source for the one we want to keep.
 	sourceDir := t.TempDir()
 	sourceFile := filepath.Join(sourceDir, "managed.md")
 	if err := os.WriteFile(sourceFile, []byte("managed content"), 0o644); err != nil {
@@ -119,13 +119,14 @@ func TestSkillsDeployer_PreservesUnmanaged(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Verify unmanaged skill is preserved.
-	content, err := os.ReadFile(filepath.Join(unmanagedDir, "SKILL.md"))
-	if err != nil {
-		t.Fatal("unmanaged skill was removed")
+	// Stale skill not in the current set should be removed.
+	if _, err := os.Stat(filepath.Join(staleDir, "SKILL.md")); !os.IsNotExist(err) {
+		t.Error("stale skill should have been removed")
 	}
-	if string(content) != "user content" {
-		t.Error("unmanaged skill content was modified")
+
+	// Managed skill should exist.
+	if _, err := os.Stat(filepath.Join(projectDir, ".claude", "skills", "managed-skill", "SKILL.md")); err != nil {
+		t.Error("managed skill should exist")
 	}
 }
 
