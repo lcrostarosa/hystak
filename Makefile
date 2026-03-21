@@ -3,13 +3,19 @@ COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 DATE    ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS  = -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.date=$(DATE)
 
-.PHONY: build test test-cover cover-html lint snapshot clean
+.PHONY: build test test-race test-update test-cover cover-html lint e2e e2e-update snapshot clean
 
 build:
 	go build -trimpath -ldflags "$(LDFLAGS)" -o hystak .
 
 test:
 	go test ./...
+
+test-race:
+	go test -race ./...
+
+test-update:
+	go test ./internal/tui/ -update
 
 test-cover:
 	go test -coverprofile=coverage.out ./...
@@ -21,6 +27,12 @@ cover-html: test-cover
 
 lint:
 	golangci-lint run
+
+e2e:
+	bash e2e/run_vhs_tests.sh
+
+e2e-update:
+	bash e2e/run_vhs_tests.sh --update
 
 snapshot:
 	goreleaser build --snapshot --clean
