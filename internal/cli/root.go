@@ -26,8 +26,8 @@ var rootCmd = &cobra.Command{
 		if !isatty.IsTerminal(os.Stdout.Fd()) && !isatty.IsCygwinTerminal(os.Stdout.Fd()) {
 			return cmd.Help()
 		}
-		// TODO: launch TUI when terminal is available
-		return cmd.Help()
+		// S-005: Launch management TUI when terminal is available
+		return launchTUI()
 	},
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		if configDir != "" {
