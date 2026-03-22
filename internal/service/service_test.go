@@ -317,8 +317,8 @@ func TestService_SyncProject_RemovesPreviouslyManaged(t *testing.T) {
 	}
 
 	// Change profile to only have github (remove postgres)
-	proj, _ := svc.Projects.Get("myproject")
-	profMgr := svc.Profiles
+	proj, _ := svc.projects.Get("myproject")
+	profMgr := svc.profiles
 	if err := profMgr.Save(model.ProjectProfile{
 		Name:      "dev",
 		MCPs:      []model.MCPAssignment{{Name: "github"}},

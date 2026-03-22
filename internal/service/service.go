@@ -31,27 +31,51 @@ type SyncResult struct {
 
 // Service orchestrates sync, diff, import, and discovery operations.
 type Service struct {
-	Registry *registry.Registry
-	Projects *project.Store
-	Profiles *profile.Manager
+	registry *registry.Registry
+	projects *project.Store
+	profiles *profile.Manager
 	deployer deploy.Deployer
 }
 
 // New creates a new Service.
 func New(reg *registry.Registry, proj *project.Store, prof *profile.Manager, dep deploy.Deployer) *Service {
 	return &Service{
-		Registry: reg,
-		Projects: proj,
-		Profiles: prof,
+		registry: reg,
+		projects: proj,
+		profiles: prof,
 		deployer: dep,
 	}
+}
+
+// GetProject retrieves a project by name.
+func (s *Service) GetProject(name string) (model.Project, bool) {
+	return s.projects.Get(name)
+}
+
+// SetActiveProfile sets the active profile for a project.
+func (s *Service) SetActiveProfile(projectName, profileName string) error {
+	return s.projects.SetActiveProfile(projectName, profileName)
+}
+
+// ListServers returns all registered servers sorted by name.
+func (s *Service) ListServers() []model.ServerDef {
+	return s.registry.Servers.List()
 }
 
 // SyncProject syncs the active profile for a project (S-033).
 // It resolves the profile, looks up servers, applies overrides,
 // deploys to the client config, and returns per-server results.
 func (s *Service) SyncProject(projectName string) ([]SyncResult, error) {
-	proj, ok := s.Projects.Get(projectName)
+	return s.syncProject(projectName, false)
+}
+
+// DryRunSync computes the sync plan without writing to disk (S-057).
+func (s *Service) DryRunSync(projectName string) ([]SyncResult, error) {
+	return s.syncProject(projectName, true)
+}
+
+func (s *Service) syncProject(projectName string, dryRun bool) ([]SyncResult, error) {
+	proj, ok := s.projects.Get(projectName)
 	if !ok {
 		return nil, &hysterr.ProjectNotFound{Name: projectName}
 	}
@@ -60,7 +84,7 @@ func (s *Service) SyncProject(projectName string) ([]SyncResult, error) {
 		return nil, fmt.Errorf("project %q has no active profile", projectName)
 	}
 
-	prof, err := s.Profiles.Load(proj.ActiveProfile)
+	prof, err := s.profiles.Load(proj.ActiveProfile)
 	if err != nil {
 		return nil, fmt.Errorf("loading profile %q: %w", proj.ActiveProfile, err)
 	}
@@ -82,8 +106,12 @@ func (s *Service) SyncProject(projectName string) ([]SyncResult, error) {
 		return nil, fmt.Errorf("reading deployed servers for %q: %w", projectName, err)
 	}
 
-	// Build sync results before writing
+	// Build sync results
 	results := s.buildSyncResults(resolved, deployed, proj.ManagedMCPs)
+
+	if dryRun {
+		return results, nil
+	}
 
 	// Merge: start with unmanaged servers, then overlay resolved managed servers
 	merged := s.mergeServers(resolved, deployed, proj.ManagedMCPs)
@@ -99,7 +127,7 @@ func (s *Service) SyncProject(projectName string) ([]SyncResult, error) {
 		newManagedNames = append(newManagedNames, name)
 	}
 	sort.Strings(newManagedNames)
-	if err := s.Projects.SetManagedMCPs(projectName, newManagedNames); err != nil {
+	if err := s.projects.SetManagedMCPs(projectName, newManagedNames); err != nil {
 		return nil, err
 	}
 
@@ -113,7 +141,7 @@ func (s *Service) resolveServers(prof model.ProjectProfile) (map[string]model.Se
 	result := make(map[string]model.ServerDef, len(prof.MCPs))
 
 	for _, assignment := range prof.MCPs {
-		srv, ok := s.Registry.Servers.Get(assignment.Name)
+		srv, ok := s.registry.Servers.Get(assignment.Name)
 		if !ok {
 			return nil, &hysterr.ServerNotFound{Name: assignment.Name}
 		}

@@ -30,7 +30,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	for _, s := range svc.Registry.Servers.List() {
+	for _, s := range svc.ListServers() {
 		endpoint := commandOrURL(s)
 		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\n", s.Name, s.Transport, endpoint); err != nil {
 			return err
