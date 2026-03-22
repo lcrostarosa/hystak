@@ -5,7 +5,6 @@ import (
 	"text/tabwriter"
 
 	"github.com/hystak/hystak/internal/model"
-	"github.com/hystak/hystak/internal/registry"
 	"github.com/spf13/cobra"
 )
 
@@ -21,8 +20,7 @@ func init() {
 }
 
 func runList(cmd *cobra.Command, args []string) error {
-	// TODO: route through service layer (Batch 4)
-	reg, err := registry.LoadDefault()
+	svc, err := buildServiceReadOnly()
 	if err != nil {
 		return err
 	}
@@ -32,7 +30,7 @@ func runList(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	for _, s := range reg.Servers.List() {
+	for _, s := range svc.Registry.Servers.List() {
 		endpoint := commandOrURL(s)
 		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\n", s.Name, s.Transport, endpoint); err != nil {
 			return err

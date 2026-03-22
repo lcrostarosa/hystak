@@ -6,13 +6,15 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/hystak/hystak/internal/config"
 	"github.com/hystak/hystak/internal/model"
 	"github.com/hystak/hystak/internal/registry"
 )
 
 func TestListCmd_EmptyRegistry(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("HYSTAK_CONFIG_DIR", tmp)
+	config.OverrideDir(tmp)
+	t.Cleanup(func() { config.OverrideDir("") })
 
 	reg := registry.New()
 	if err := reg.Save(filepath.Join(tmp, "registry.yaml")); err != nil {
@@ -42,7 +44,8 @@ func TestListCmd_EmptyRegistry(t *testing.T) {
 
 func TestListCmd_WithServers(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("HYSTAK_CONFIG_DIR", tmp)
+	config.OverrideDir(tmp)
+	t.Cleanup(func() { config.OverrideDir("") })
 
 	reg := registry.New()
 	if err := reg.Servers.Add(model.ServerDef{
@@ -95,7 +98,8 @@ func TestListCmd_WithServers(t *testing.T) {
 
 func TestListCmd_SortedByName(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("HYSTAK_CONFIG_DIR", tmp)
+	config.OverrideDir(tmp)
+	t.Cleanup(func() { config.OverrideDir("") })
 
 	reg := registry.New()
 	if err := reg.Servers.Add(model.ServerDef{Name: "zebra", Transport: model.TransportStdio, Command: "z"}); err != nil {
@@ -130,7 +134,8 @@ func TestListCmd_SortedByName(t *testing.T) {
 
 func TestListCmd_NoRegistryFile(t *testing.T) {
 	tmp := t.TempDir()
-	t.Setenv("HYSTAK_CONFIG_DIR", tmp)
+	config.OverrideDir(tmp)
+	t.Cleanup(func() { config.OverrideDir("") })
 
 	var buf bytes.Buffer
 	rootCmd.SetOut(&buf)
