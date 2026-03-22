@@ -409,7 +409,7 @@ for name, sel := range m.mcpSelections {
 
 ---
 
-## 10. Cleanup Symmetry
+## 11. Cleanup Symmetry
 
 ### Anti-pattern: Add path works, remove path doesn't
 
@@ -422,7 +422,7 @@ for name, sel := range m.mcpSelections {
 
 ---
 
-## 11. `os.Stat` Error Handling
+## 12. `os.Stat` Error Handling
 
 ### Anti-pattern: Only checking `IsNotExist`
 
@@ -451,7 +451,7 @@ default:
 
 ---
 
-## 12. Dead Code
+## 13. Dead Code
 
 ### Anti-pattern: Unused constructors, redundant helpers, duplicate logic
 
@@ -465,7 +465,7 @@ v1 has: unused error constructors in `errors.go`, a `newTeaProgram` helper calle
 
 ---
 
-## 13. Test Coverage Gaps
+## 14. Test Coverage Gaps
 
 ### Anti-pattern: Tests that don't cover the full surface
 
@@ -483,7 +483,7 @@ v1 has: unused error constructors in `errors.go`, a `newTeaProgram` helper calle
 
 ---
 
-## 14. String Parsing
+## 15. String Parsing
 
 ### Anti-pattern: Fragile delimiter-based parsing
 
@@ -494,3 +494,108 @@ v1 has: unused error constructors in `errors.go`, a `newTeaProgram` helper calle
 - For user-facing input formats, use an unambiguous delimiter or a proper parser.
 - If comma-separated key=value pairs are needed, either escape commas or switch to newline-delimited input.
 - Add test cases for values containing the delimiter character.
+
+---
+
+## 16. Fail Fast — No Defensive Coding
+
+### Anti-pattern: Defensive nil checks, fallback defaults, and silent recovery
+
+Code that guards against "impossible" states with nil checks, default values, or silent recovery hides bugs instead of surfacing them. When an invariant is violated, the program limps forward in an undefined state, producing wrong results far from the original cause.
+
+```go
+// Bad — masks a nil bug that should never happen
+func (s *Service) Deploy(name string) error {
+    if s.deployer == nil {
+        return nil // silently does nothing
+    }
+    return s.deployer.Deploy(name)
+}
+
+// Bad — fallback hides a missing config
+func getTimeout(cfg *Config) time.Duration {
+    if cfg == nil || cfg.Timeout == 0 {
+        return 30 * time.Second // "safe" default
+    }
+    return cfg.Timeout
+}
+```
+
+### Rule
+
+- **If a nil/zero value is a programming error, don't check for it — let it panic.** A panic with a stack trace at the point of failure is faster to diagnose than silent wrong behavior discovered in production.
+- **Never return `nil` error for impossible states.** If a function is called in a state that shouldn't exist, that's a bug — surface it loudly.
+- **Validate at system boundaries, trust internal invariants.** Validate user input, external API responses, and config files. Once data enters the system and passes validation, internal code should assume it's correct.
+- **No fallback defaults for required values.** If a config field is required, fail at startup if it's missing. Don't silently substitute a default that makes the system "work" in a degraded, untested mode.
+- **Prefer `panic` over error returns for violated preconditions** in internal (non-exported) code. A precondition violation is a programmer mistake, not a runtime error.
+
+```go
+// Good — panics immediately if invariant is violated
+func (s *Service) Deploy(name string) error {
+    // s.deployer is set in NewService; nil here is a bug
+    return s.deployer.Deploy(name)
+}
+
+// Good — fails at startup, not at request time
+func NewService(cfg *Config) (*Service, error) {
+    if cfg.Timeout == 0 {
+        return nil, fmt.Errorf("config: timeout is required")
+    }
+    // ...
+}
+```
+
+- **In tests, use `t.Fatal` not `t.Error` for setup failures.** If setup fails, every subsequent assertion is meaningless — fail fast, don't accumulate noise.
+
+---
+
+## 17. Concurrency
+
+### Anti-pattern: Shared mutable state without synchronization
+
+The service layer, deployers, and TUI all run in the same process. Bubble Tea's `Update` runs on one goroutine, but `tea.Cmd` functions run concurrently. Sharing mutable state between them without protection causes data races.
+
+### Rule
+
+- **Bubble Tea models are owned by the `Update` goroutine.** Never read or write model fields from a `tea.Cmd`. Pass values into the `Cmd` closure by copy, return results via `tea.Msg`.
+- **No goroutines in the service layer.** The service is single-threaded by design. If concurrent work is needed (e.g., parallel sync), introduce it explicitly with documented synchronization.
+- **Protect shared state with `sync.Mutex`, not channels**, unless the data flow is naturally producer-consumer. Don't use channels as lockboxes.
+- **The lock file (`isolation/`) is the only cross-process synchronization primitive.** Keep it simple: write PID, check liveness with `kill(pid, 0)`, clean stale locks. No advisory locks, no flock.
+- **Run `make test-race` before merging.** Any race detector failure is a blocking bug.
+
+---
+
+## 18. CLI Output
+
+### Rule
+
+- **Errors to stderr, data to stdout.** `fmt.Fprintf(os.Stderr, ...)` for errors and warnings. `fmt.Println` / tabwriter for data output. Never mix them.
+- **Exit codes:** `0` = success, `1` = runtime error, `2` = usage error (bad args/flags). Use `os.Exit` only in `main`; everywhere else, return errors.
+- **`--json` output is a contract.** JSON output uses `encoding/json` with consistent key naming (snake_case). Once shipped, field names and types don't change without a deprecation cycle.
+- **`--quiet` suppresses informational output only.** Errors still go to stderr. Exit code still reflects success/failure.
+- **Color respects the environment.** Check `NO_COLOR` env var and `TERM=dumb` before emitting ANSI codes. Use lipgloss — it handles this. Never hardcode escape sequences.
+- **Table output uses `tabwriter`** for aligned columns. Column headers are UPPERCASE. Truncate long values with `…` rather than wrapping.
+
+---
+
+## 19. Security
+
+### Rule
+
+- **Never log or display secret values.** Env vars containing `TOKEN`, `SECRET`, `KEY`, `PASSWORD`, or `CREDENTIAL` (case-insensitive) must be masked in any output, diff, or debug log. Display as `${VAR_NAME}` or `***`.
+- **File permissions matter.** `registry.yaml`, `projects.yaml`, and `user.yaml` contain env var references — write them with `0644`. `backups/` may contain resolved secrets — write backup files with `0600`.
+- **Symlink targets must be validated.** Before creating a symlink, verify the target is within expected directories (user's home, project path, hystak config dir). Never follow symlinks to resolve a deployment target — use `os.Lstat`, not `os.Stat`.
+- **No shell expansion in deployer paths.** Paths from registry and project configs are used as-is. Never pass them through `sh -c` or `os.ExpandEnv` except for the explicit `${VAR}` interpolation in env/header values at sync time.
+- **Atomic writes prevent partial-read attacks.** The `atomicWrite` pattern (temp + fsync + rename) also prevents other processes from reading half-written configs.
+
+---
+
+## 20. Dependencies
+
+### Rule
+
+- **7 direct dependencies is the ceiling, not the floor.** Do not add a new dependency without justification. If the stdlib can do it in under 20 lines, use the stdlib.
+- **No transitive dependency surprises.** Run `go mod tidy` after any change. Review `go mod graph` for new transitives before merging.
+- **Pin with `go.sum`, not manual version locks.** `go.sum` is checked in and verified by CI. Never edit it by hand.
+- **Charm ecosystem is the blessed TUI stack.** bubbletea, bubbles, lipgloss, and teatest. No alternative TUI libraries (tview, termui, etc.).
+- **No CGO.** `CGO_ENABLED=0` is a hard requirement for cross-platform goreleaser builds.

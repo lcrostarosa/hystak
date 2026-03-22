@@ -5,22 +5,6 @@
 hystak is a TUI + CLI tool for managing MCP server configurations across multiple Claude Code projects. It maintains a central registry of servers, skills, hooks, permissions, templates, and prompts, then deploys selected subsets to individual projects via profiles.
 
 **Core loop:** Registry → Profiles → Sync → Launch
-
----
-
-## Changes from Original PRD
-
-| Area | Original | Revised | Rationale |
-|------|----------|---------|-----------|
-| Setup wizard | 4 steps (keybindings, scanning, catalog, project) | 2 steps (keybindings prompt + unified first-project flow) | Reduce time-to-value; catalog merges into MCP selection |
-| Launch wizard | 8 sequential steps | 3 steps (MCPs, Quick Options, Review) | 8 steps is a wall; power settings move to hub mode |
-| TUI tabs | 7+ (MCPs, Skills, Hooks, Permissions, Templates, Prompts, Profiles) | 4 (Registry, Projects, Tools, Help) | Reduce tab sprawl; use sub-navigation within Registry |
-| Wizard flows | 3 separate (setup, new-project, launch) | 2 (first-run, launch) | Setup + new-project merged into one detection flow |
-| "Vanilla" profile | Named "vanilla" | Named "empty" | Clearer intent without jargon |
-| Sync dry-run | Only on `run --dry-run` | Added `sync --dry-run` | Sync writes to disk and needs its own dry-run |
-| Validation | None | Added `hystak doctor` | Catch registry issues before sync fails |
-| Bulk TUI ops | Single-item only | Added multi-select for delete/assign | Scales with registry growth |
-
 ---
 
 ## 1. First Run & Setup
@@ -128,10 +112,6 @@ Running `hystak` from an unregistered directory triggers the first-project flow:
 
 ### S-025: Assign Resources to Profile
 Selecting a project in the Projects tab shows the right pane with 6 sections (MCPs, Skills, Hooks, Permissions, Templates, Prompts). Each section shows toggleable items from the registry.
-
-### S-026: Legacy Auto-Migration
-Projects with direct assignments but no active profile get a "default" profile auto-created from existing assignments on next sync.
-
 ---
 
 ## 6. Profiles
@@ -349,7 +329,6 @@ Overrides are per-server, per-project. Applied during sync without modifying the
 - Profiles referencing missing resources
 - Skills with missing source files
 - Orphaned managed_mcps entries
-- Legacy markers needing migration
 
 Prints per-issue severity (error / warning) with fix suggestions.
 
@@ -388,14 +367,8 @@ Invalid YAML fails with parse error identifying file and line.
 ### S-083: Missing Config Directory
 `~/.hystak/` auto-created with `0755` permissions.
 
-### S-084: Legacy Migration
-Configs at `~/.config/hystak/` silently migrated to `~/.hystak/` on first run.
-
 ### S-085: Bootstrap Client Config
 Missing `.mcp.json` or `~/.claude.json` created with correct structure before first write.
 
 ### S-086: Missing Skill Source
 Sync fails with error identifying the missing source path.
-
-### S-087: Legacy Skill Marker Migration
-Old `.hystak-managed` marker files auto-migrated to symlink tracking on next sync.

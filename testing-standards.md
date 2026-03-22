@@ -194,6 +194,7 @@ func TestAddTemplate_CRUD(t *testing.T)   { /* add, get, update, delete */ }
 
 ### Rule
 
+- **Table-driven tests are the default.** Prefer a single table-driven test over multiple standalone test functions. A 200-line test file with 10 copy-paste functions should be a 60-line table-driven test. Long test files are a smell — if the file is growing, check whether cases can be collapsed into a table.
 - When two or more test functions share the same structure and differ only in inputs/expectations, use a table-driven test.
 - Each table entry must have a `name` field used in `t.Run`.
 - The table should make the varying dimension obvious at a glance:

@@ -176,16 +176,13 @@
 | ID | Story | Effort |
 |----|-------|--------|
 | S-074 | `hystak doctor` (registry validation) | L |
-| S-084 | Legacy config migration (`~/.config/hystak/`) | M |
 | S-086 | Missing skill source error | S |
-| S-087 | Legacy skill marker migration | M |
 
 ### CLI Polish
 | ID | Story | Effort |
 |----|-------|--------|
 | S-006 | `hystak setup` (re-run wizard) | S |
 | S-022 | Dangling tag reference error | S |
-| S-026 | Legacy project auto-migration | M |
 | S-072 | Dual YAML format (bare string + map) | S |
 | S-076 | `--json` output flag | M |
 | S-077 | `--quiet` flag | S |
@@ -225,18 +222,3 @@ P0 (core sync)
 | **v0.3 — Power User** | P0–P2 (67 stories) | Week 11 |
 | **v1.0 — Complete** | All (87 stories) | Week 14 |
 
----
-
-## Cut / Deferred (from original 110)
-
-These original stories were merged, consolidated, or deferred:
-
-| Original | Disposition |
-|----------|-------------|
-| S-001 through S-005 (original) | Merged into revised S-001–S-005 (2-step first-run) |
-| S-075 (8-step wizard) | Replaced with 3-step wizard (S-060) |
-| S-035 (vanilla profile) | Renamed to "empty" (S-029) |
-| S-073 (user config) | Folded into S-073 settings table |
-| S-098–100 (settings stories) | Consolidated into single settings spec |
-| S-101–104 (terminal stories) | Consolidated into S-075–081 |
-| S-105–110 (error stories) | Consolidated into S-082–087 |

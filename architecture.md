@@ -57,7 +57,7 @@ internal/
 ├── backup/      — Config snapshot engine
 ├── catalog/     — Built-in curated server/skill/hook catalog
 ├── cli/         — Cobra command tree (12 commands)
-├── config/      — XDG paths, user config, legacy migration
+├── config/      — XDG paths, user config
 ├── deploy/      — Deployer + ResourceDeployer implementations
 ├── discovery/   — Auto-detection engine for MCPs/skills/hooks/permissions/env/prompts
 ├── errors/      — Custom error types (ProjectNotFound, ServerNotFound, etc.)
@@ -392,7 +392,6 @@ New types and new clients slot into existing loops rather than requiring new cod
 $ hystak                          (no args, terminal detected)
     │
     ├─ PersistentPreRunE
-    │   ├─ Migrate legacy config (~/.config/hystak → ~/.hystak)
     │   ├─ Create service (loads registry.yaml + projects.yaml)
     │   ├─ Auto-discover: scan ~/.claude.json + project .mcp.json files
     │   └─ Load keybindings
