@@ -15,11 +15,12 @@ import (
 )
 
 var syncCmd = &cobra.Command{
-	Use:   "sync <project>",
-	Short: "Deploy project configs",
-	Long:  "Resolve the active profile and deploy MCP servers to client config files.",
-	Args:  cobra.ExactArgs(1),
-	RunE:  runSync,
+	Use:         "sync <project>",
+	Short:       "Deploy project configs",
+	Long:        "Resolve the active profile and deploy MCP servers to client config files.",
+	Args:        cobra.ExactArgs(1),
+	Annotations: map[string]string{"mutates": "true"},
+	RunE:        runSync,
 }
 
 func init() {

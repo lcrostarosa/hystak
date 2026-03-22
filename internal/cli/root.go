@@ -2,6 +2,8 @@ package cli
 
 import (
 	"github.com/hystak/hystak/internal/config"
+	"github.com/hystak/hystak/internal/keyconfig"
+	"github.com/hystak/hystak/internal/registry"
 	"github.com/spf13/cobra"
 )
 
@@ -17,7 +19,29 @@ var rootCmd = &cobra.Command{
 		if configDir != "" {
 			config.OverrideDir(configDir)
 		}
-		return nil
+
+		// First-run flow: only for mutating commands (coding-standards rule 6)
+		if cmd.Annotations["mutates"] != "true" {
+			return nil
+		}
+
+		firstRun, err := config.IsFirstRun()
+		if err != nil {
+			return err
+		}
+		if !firstRun {
+			// Also check if registry is empty (re-run scenario)
+			reg, err := registry.LoadDefault()
+			if err != nil {
+				return nil // non-blocking
+			}
+			_, keysErr := keyconfig.LoadDefault()
+			if !reg.IsEmpty() || keysErr == nil {
+				return nil
+			}
+		}
+
+		return runFirstRunFlow(cmd)
 	},
 }
 

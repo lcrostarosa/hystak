@@ -19,11 +19,12 @@ var (
 )
 
 var runCmd = &cobra.Command{
-	Use:   "run <project> [-- extra-args...]",
-	Short: "Sync and launch Claude Code",
-	Long:  "Resolve the active profile, deploy configs, and launch the client. Post-exit loop offers relaunch/configure/quit.",
-	Args:  cobra.ArbitraryArgs,
-	RunE:  runRun,
+	Use:         "run <project> [-- extra-args...]",
+	Short:       "Sync and launch Claude Code",
+	Long:        "Resolve the active profile, deploy configs, and launch the client. Post-exit loop offers relaunch/configure/quit.",
+	Args:        cobra.ArbitraryArgs,
+	Annotations: map[string]string{"mutates": "true"},
+	RunE:        runRun,
 }
 
 func init() {
