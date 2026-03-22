@@ -5,6 +5,7 @@ import (
 	"os"
 	"text/tabwriter"
 
+	"github.com/hystak/hystak/internal/backup"
 	"github.com/hystak/hystak/internal/deploy"
 	"github.com/hystak/hystak/internal/model"
 	"github.com/hystak/hystak/internal/profile"
@@ -66,7 +67,9 @@ func buildService() (*service.Service, error) {
 		return nil, fmt.Errorf("no deployer for %s", model.ClientClaudeCode)
 	}
 
-	return service.New(reg, projStore, profMgr, dep), nil
+	svc := service.New(reg, projStore, profMgr, dep)
+	svc.WithBackup(backup.NewDefaultManager())
+	return svc, nil
 }
 
 // buildServiceReadOnly creates a Service for read-only operations.

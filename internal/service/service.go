@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/hystak/hystak/internal/backup"
 	"github.com/hystak/hystak/internal/deploy"
 	hysterr "github.com/hystak/hystak/internal/errors"
 	"github.com/hystak/hystak/internal/model"
@@ -35,6 +36,7 @@ type Service struct {
 	projects *project.Store
 	profiles *profile.Manager
 	deployer deploy.Deployer
+	backup   *backup.Manager
 }
 
 // New creates a new Service.
@@ -45,6 +47,12 @@ func New(reg *registry.Registry, proj *project.Store, prof *profile.Manager, dep
 		profiles: prof,
 		deployer: dep,
 	}
+}
+
+// WithBackup attaches a backup manager to the service (S-040).
+func (s *Service) WithBackup(mgr *backup.Manager) *Service {
+	s.backup = mgr
+	return s
 }
 
 // GetProject retrieves a project by name.
@@ -111,6 +119,14 @@ func (s *Service) syncProject(projectName string, dryRun bool) ([]SyncResult, er
 
 	if dryRun {
 		return results, nil
+	}
+
+	// S-040: Backup before writing
+	if s.backup != nil {
+		configPath := s.deployer.ConfigPath(proj.Path)
+		if err := s.backup.BackupBeforeSync(projectName, configPath); err != nil {
+			return nil, fmt.Errorf("backup before sync for %q: %w", projectName, err)
+		}
 	}
 
 	// Merge: start with unmanaged servers, then overlay resolved managed servers
