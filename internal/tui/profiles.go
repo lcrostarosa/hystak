@@ -549,21 +549,6 @@ func (m *ProfilesModel) toggleAssignment() tea.Cmd {
 	return m.autoSync(proj.Name)
 }
 
-func (m *ProfilesModel) syncSelectedProfile() {
-	proj, ok := m.selectedProfile()
-	if !ok {
-		return
-	}
-	m.err = nil
-	m.syncMsg = ""
-	results, err := m.service.SyncProject(proj.Name)
-	if err != nil {
-		m.err = err
-		return
-	}
-	m.syncMsg = fmt.Sprintf("Synced %s: %d servers", proj.Name, len(results))
-}
-
 // View renders the profiles tab as a horizontal split: list + detail.
 func (m ProfilesModel) View() string {
 	if m.width == 0 || m.height == 0 {

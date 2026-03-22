@@ -13,24 +13,28 @@ import (
 
 func testService() *service.Service {
 	reg := &registry.Registry{
-		Servers: map[string]model.ServerDef{
-			"github": {
-				Name:      "github",
-				Transport: model.TransportStdio,
-				Command:   "npx",
-				Args:      []string{"-y", "@modelcontextprotocol/server-github"},
-				Env:       map[string]string{"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
-			},
-			"qdrant": {
-				Name:        "qdrant",
-				Description: "Qdrant vector database",
-				Transport:   model.TransportHTTP,
-				URL:         "http://localhost:6333/mcp",
-				Headers:     map[string]string{"Authorization": "Bearer ${QDRANT_API_KEY}"},
-			},
-		},
-		Tags: make(map[string][]string),
+		Servers:     registry.NewStore[model.ServerDef, *model.ServerDef]("server"),
+		Skills:      registry.NewStore[model.SkillDef, *model.SkillDef]("skill"),
+		Hooks:       registry.NewStore[model.HookDef, *model.HookDef]("hook"),
+		Permissions: registry.NewStore[model.PermissionRule, *model.PermissionRule]("permission"),
+		Templates:   registry.NewStore[model.TemplateDef, *model.TemplateDef]("template"),
+		Prompts:     registry.NewStore[model.PromptDef, *model.PromptDef]("prompt"),
+		Tags:        make(map[string][]string),
 	}
+	_ = reg.Servers.Add(model.ServerDef{
+		Name:      "github",
+		Transport: model.TransportStdio,
+		Command:   "npx",
+		Args:      []string{"-y", "@modelcontextprotocol/server-github"},
+		Env:       map[string]string{"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
+	})
+	_ = reg.Servers.Add(model.ServerDef{
+		Name:        "qdrant",
+		Description: "Qdrant vector database",
+		Transport:   model.TransportHTTP,
+		URL:         "http://localhost:6333/mcp",
+		Headers:     map[string]string{"Authorization": "Bearer ${QDRANT_API_KEY}"},
+	})
 
 	store := &project.Store{
 		Projects: map[string]model.Project{
@@ -237,26 +241,30 @@ func TestDeleteConfirmExecute(t *testing.T) {
 
 func TestDeleteRefusedByTag(t *testing.T) {
 	reg := &registry.Registry{
-		Servers: map[string]model.ServerDef{
-			"github": {
-				Name:      "github",
-				Transport: model.TransportStdio,
-				Command:   "npx",
-				Args:      []string{"-y", "@modelcontextprotocol/server-github"},
-				Env:       map[string]string{"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
-			},
-			"qdrant": {
-				Name:        "qdrant",
-				Description: "Qdrant vector database",
-				Transport:   model.TransportHTTP,
-				URL:         "http://localhost:6333/mcp",
-				Headers:     map[string]string{"Authorization": "Bearer ${QDRANT_API_KEY}"},
-			},
-		},
+		Servers:     registry.NewStore[model.ServerDef, *model.ServerDef]("server"),
+		Skills:      registry.NewStore[model.SkillDef, *model.SkillDef]("skill"),
+		Hooks:       registry.NewStore[model.HookDef, *model.HookDef]("hook"),
+		Permissions: registry.NewStore[model.PermissionRule, *model.PermissionRule]("permission"),
+		Templates:   registry.NewStore[model.TemplateDef, *model.TemplateDef]("template"),
+		Prompts:     registry.NewStore[model.PromptDef, *model.PromptDef]("prompt"),
 		Tags: map[string][]string{
 			"core": {"github"},
 		},
 	}
+	_ = reg.Servers.Add(model.ServerDef{
+		Name:      "github",
+		Transport: model.TransportStdio,
+		Command:   "npx",
+		Args:      []string{"-y", "@modelcontextprotocol/server-github"},
+		Env:       map[string]string{"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
+	})
+	_ = reg.Servers.Add(model.ServerDef{
+		Name:        "qdrant",
+		Description: "Qdrant vector database",
+		Transport:   model.TransportHTTP,
+		URL:         "http://localhost:6333/mcp",
+		Headers:     map[string]string{"Authorization": "Bearer ${QDRANT_API_KEY}"},
+	})
 	store := &project.Store{
 		Projects: map[string]model.Project{
 			"myproject": {
@@ -363,26 +371,30 @@ func TestSortedKeys(t *testing.T) {
 
 func TestCountServerProfileRefs(t *testing.T) {
 	reg := &registry.Registry{
-		Servers: map[string]model.ServerDef{
-			"github": {
-				Name:      "github",
-				Transport: model.TransportStdio,
-				Command:   "npx",
-				Args:      []string{"-y", "@modelcontextprotocol/server-github"},
-				Env:       map[string]string{"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
-			},
-			"qdrant": {
-				Name:        "qdrant",
-				Description: "Qdrant vector database",
-				Transport:   model.TransportHTTP,
-				URL:         "http://localhost:6333/mcp",
-				Headers:     map[string]string{"Authorization": "Bearer ${QDRANT_API_KEY}"},
-			},
-		},
+		Servers:     registry.NewStore[model.ServerDef, *model.ServerDef]("server"),
+		Skills:      registry.NewStore[model.SkillDef, *model.SkillDef]("skill"),
+		Hooks:       registry.NewStore[model.HookDef, *model.HookDef]("hook"),
+		Permissions: registry.NewStore[model.PermissionRule, *model.PermissionRule]("permission"),
+		Templates:   registry.NewStore[model.TemplateDef, *model.TemplateDef]("template"),
+		Prompts:     registry.NewStore[model.PromptDef, *model.PromptDef]("prompt"),
 		Tags: map[string][]string{
 			"core": {"github", "qdrant"},
 		},
 	}
+	_ = reg.Servers.Add(model.ServerDef{
+		Name:      "github",
+		Transport: model.TransportStdio,
+		Command:   "npx",
+		Args:      []string{"-y", "@modelcontextprotocol/server-github"},
+		Env:       map[string]string{"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
+	})
+	_ = reg.Servers.Add(model.ServerDef{
+		Name:        "qdrant",
+		Description: "Qdrant vector database",
+		Transport:   model.TransportHTTP,
+		URL:         "http://localhost:6333/mcp",
+		Headers:     map[string]string{"Authorization": "Bearer ${QDRANT_API_KEY}"},
+	})
 	store := &project.Store{
 		Projects: map[string]model.Project{
 			"myproject": {

@@ -465,7 +465,7 @@ func (s *Store) ResolveServers(projectName string, reg *registry.Registry) ([]mo
 	// 3. Resolve each server from the registry and apply overrides.
 	resolved := make([]model.ServerDef, 0, len(serverNames))
 	for _, name := range serverNames {
-		srv, ok := reg.Get(name)
+		srv, ok := reg.Servers.Get(name)
 		if !ok {
 			return nil, fmt.Errorf("resolving project %q: server %q not found in registry", projectName, name)
 		}

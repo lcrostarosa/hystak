@@ -31,15 +31,19 @@ func testImportService(t *testing.T, importServers map[string]interface{}) (*ser
 	_ = os.WriteFile(filepath.Join(projectDir, ".mcp.json"), data, 0o644)
 
 	reg := &registry.Registry{
-		Servers: map[string]model.ServerDef{
-			"existing": {
-				Name:      "existing",
-				Transport: model.TransportStdio,
-				Command:   "existing-cmd",
-			},
-		},
-		Tags: make(map[string][]string),
+		Servers:     registry.NewStore[model.ServerDef, *model.ServerDef]("server"),
+		Skills:      registry.NewStore[model.SkillDef, *model.SkillDef]("skill"),
+		Hooks:       registry.NewStore[model.HookDef, *model.HookDef]("hook"),
+		Permissions: registry.NewStore[model.PermissionRule, *model.PermissionRule]("permission"),
+		Templates:   registry.NewStore[model.TemplateDef, *model.TemplateDef]("template"),
+		Prompts:     registry.NewStore[model.PromptDef, *model.PromptDef]("prompt"),
+		Tags:        make(map[string][]string),
 	}
+	_ = reg.Servers.Add(model.ServerDef{
+		Name:      "existing",
+		Transport: model.TransportStdio,
+		Command:   "existing-cmd",
+	})
 
 	store := &project.Store{
 		Projects: make(map[string]model.Project),

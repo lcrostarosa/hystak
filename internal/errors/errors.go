@@ -90,6 +90,11 @@ func IsNotAssigned(err error) bool {
 	return errors.As(err, &e)
 }
 
+// --- Generic constructors (used by Store[T]) ---
+
+func NotFoundFor(kind, name string) error      { return &NotFoundError{Kind: kind, Name: name} }
+func AlreadyExistsFor(kind, name string) error  { return &AlreadyExistsError{Kind: kind, Name: name} }
+
 // --- Convenience constructors ---
 
 func ServerNotFound(name string) error       { return &NotFoundError{Kind: "server", Name: name} }

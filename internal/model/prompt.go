@@ -9,3 +9,6 @@ type PromptDef struct {
 	Category    string   `yaml:"category,omitempty"`   // grouping (safety, tone, conventions, etc.)
 	Order       int      `yaml:"order,omitempty"`      // composition precedence (lower = earlier)
 }
+
+func (p *PromptDef) ResourceName() string    { return p.Name }
+func (p *PromptDef) SetResourceName(n string) { p.Name = n }

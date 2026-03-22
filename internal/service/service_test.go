@@ -71,37 +71,38 @@ func (m *mockDeployer) setDeployed(projectPath string, servers map[string]model.
 }
 
 func newTestRegistry() *registry.Registry {
-	return &registry.Registry{
-		Servers: map[string]model.ServerDef{
-			"github": {
-				Name:      "github",
-				Transport: model.TransportStdio,
-				Command:   "npx",
-				Args:      []string{"-y", "@modelcontextprotocol/server-github"},
-				Env:       map[string]string{"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
-			},
-			"filesystem": {
-				Name:      "filesystem",
-				Transport: model.TransportStdio,
-				Command:   "npx",
-				Args:      []string{"-y", "@modelcontextprotocol/server-filesystem", "/"},
-			},
-			"qdrant": {
-				Name:      "qdrant",
-				Transport: model.TransportStdio,
-				Command:   "uvx",
-				Args:      []string{"mcp-server-qdrant"},
-				Env:       map[string]string{"QDRANT_URL": "${QDRANT_URL}", "COLLECTION_NAME": "${COLLECTION_NAME}"},
-			},
-		},
-		Skills:      make(map[string]model.SkillDef),
-		Hooks:       make(map[string]model.HookDef),
-		Permissions: make(map[string]model.PermissionRule),
-		Templates:   make(map[string]model.TemplateDef),
+	reg := &registry.Registry{
+		Servers:     registry.NewStore[model.ServerDef, *model.ServerDef]("server"),
+		Skills:      registry.NewStore[model.SkillDef, *model.SkillDef]("skill"),
+		Hooks:       registry.NewStore[model.HookDef, *model.HookDef]("hook"),
+		Permissions: registry.NewStore[model.PermissionRule, *model.PermissionRule]("permission"),
+		Templates:   registry.NewStore[model.TemplateDef, *model.TemplateDef]("template"),
+		Prompts:     registry.NewStore[model.PromptDef, *model.PromptDef]("prompt"),
 		Tags: map[string][]string{
 			"core": {"github", "filesystem"},
 		},
 	}
+	_ = reg.Servers.Add(model.ServerDef{
+		Name:      "github",
+		Transport: model.TransportStdio,
+		Command:   "npx",
+		Args:      []string{"-y", "@modelcontextprotocol/server-github"},
+		Env:       map[string]string{"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
+	})
+	_ = reg.Servers.Add(model.ServerDef{
+		Name:      "filesystem",
+		Transport: model.TransportStdio,
+		Command:   "npx",
+		Args:      []string{"-y", "@modelcontextprotocol/server-filesystem", "/"},
+	})
+	_ = reg.Servers.Add(model.ServerDef{
+		Name:      "qdrant",
+		Transport: model.TransportStdio,
+		Command:   "uvx",
+		Args:      []string{"mcp-server-qdrant"},
+		Env:       map[string]string{"QDRANT_URL": "${QDRANT_URL}", "COLLECTION_NAME": "${COLLECTION_NAME}"},
+	})
+	return reg
 }
 
 func newTestStore() *project.Store {
@@ -478,7 +479,8 @@ func TestApplyImport_ReplacesConflict(t *testing.T) {
 func TestApplyImport_KeepsConflict(t *testing.T) {
 	svc, _ := setupService(t)
 
-	originalCmd := svc.registry.Servers["github"].Command
+	gh, _ := svc.registry.Servers.Get("github")
+	originalCmd := gh.Command
 
 	candidates := []ImportCandidate{
 		{
@@ -1005,10 +1007,10 @@ func TestSyncProject_SyncsSkills(t *testing.T) {
 	}
 
 	// Add skill to registry.
-	svc.registry.Skills["go-reviewer"] = model.SkillDef{
+	_ = svc.registry.Skills.Add(model.SkillDef{
 		Name:   "go-reviewer",
 		Source: sourceFile,
-	}
+	})
 
 	// Update project to reference the skill.
 	proj := svc.projects.Projects["myproject"]
@@ -1052,17 +1054,17 @@ func TestSyncProject_SyncsHooksAndPermissions(t *testing.T) {
 	svc, _ := setupService(t)
 
 	// Add hook and permission to registry.
-	svc.registry.Hooks["lint-bash"] = model.HookDef{
+	_ = svc.registry.Hooks.Add(model.HookDef{
 		Name:    "lint-bash",
 		Event:   "PreToolUse",
 		Matcher: "Bash",
 		Command: "echo lint",
 		Timeout: 5000,
-	}
-	svc.registry.Permissions["allow-bash"] = model.PermissionRule{
+	})
+	_ = svc.registry.Permissions.Add(model.PermissionRule{
 		Name: "allow-bash",
 		Rule: "Bash(*)",
-	}
+	})
 
 	// Update project.
 	proj := svc.projects.Projects["myproject"]
@@ -1101,10 +1103,10 @@ func TestSyncProject_SyncsClaudeMD(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	svc.registry.Templates["go-project"] = model.TemplateDef{
+	_ = svc.registry.Templates.Add(model.TemplateDef{
 		Name:   "go-project",
 		Source: sourceFile,
-	}
+	})
 
 	proj := svc.projects.Projects["myproject"]
 	proj.ClaudeMD = "go-project"
@@ -1495,16 +1497,16 @@ func TestSyncProfile_WithSkillsAndHooks(t *testing.T) {
 	}
 
 	// Add skill and hook to registry.
-	svc.registry.Skills["reviewer"] = model.SkillDef{
+	_ = svc.registry.Skills.Add(model.SkillDef{
 		Name:   "reviewer",
 		Source: sourceFile,
-	}
-	svc.registry.Hooks["lint-bash"] = model.HookDef{
+	})
+	_ = svc.registry.Hooks.Add(model.HookDef{
 		Name:    "lint-bash",
 		Event:   "PreToolUse",
 		Matcher: "Bash",
 		Command: "echo lint",
-	}
+	})
 
 	// Create profile with skills and hooks.
 	prof := profile.Profile{

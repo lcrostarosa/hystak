@@ -26,6 +26,9 @@ type ServerDef struct {
 	Headers     map[string]string `yaml:"headers,omitempty"`
 }
 
+func (s *ServerDef) ResourceName() string    { return s.Name }
+func (s *ServerDef) SetResourceName(n string) { s.Name = n }
+
 // Equal performs semantic comparison, ignoring Name and Description (registry-only metadata).
 func (a ServerDef) Equal(b ServerDef) bool {
 	return a.Transport == b.Transport &&

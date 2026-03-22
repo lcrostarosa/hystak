@@ -57,11 +57,11 @@ tags:
 		t.Fatalf("Load: %v", err)
 	}
 
-	if len(r.Servers) != 2 {
-		t.Fatalf("expected 2 servers, got %d", len(r.Servers))
+	if r.Servers.Len() != 2 {
+		t.Fatalf("expected 2 servers, got %d", r.Servers.Len())
 	}
 
-	gh, ok := r.Get("github")
+	gh, ok := r.Servers.Get("github")
 	if !ok {
 		t.Fatal("expected github server")
 	}
@@ -78,7 +78,7 @@ tags:
 		t.Errorf("unexpected env: %v", gh.Env)
 	}
 
-	remote, ok := r.Get("remote")
+	remote, ok := r.Servers.Get("remote")
 	if !ok {
 		t.Fatal("expected remote server")
 	}
@@ -106,8 +106,8 @@ func TestLoadEmptyFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(r.Servers) != 0 {
-		t.Errorf("expected empty servers, got %d", len(r.Servers))
+	if r.Servers.Len() != 0 {
+		t.Errorf("expected empty servers, got %d", r.Servers.Len())
 	}
 	if len(r.Tags) != 0 {
 		t.Errorf("expected empty tags, got %d", len(r.Tags))
@@ -119,7 +119,7 @@ func TestLoadMissingFile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if len(r.Servers) != 0 {
+	if r.Servers.Len() != 0 {
 		t.Errorf("expected empty servers")
 	}
 }
@@ -129,8 +129,8 @@ func TestSaveAndReload(t *testing.T) {
 	path := filepath.Join(dir, "registry.yaml")
 
 	r := empty()
-	r.Servers["github"] = testServer("github")
-	r.Servers["remote"] = testHTTPServer("remote")
+	_ = r.Servers.Add(testServer("github"))
+	_ = r.Servers.Add(testHTTPServer("remote"))
 	r.Tags["core"] = []string{"github"}
 
 	if err := r.Save(path); err != nil {
@@ -142,11 +142,11 @@ func TestSaveAndReload(t *testing.T) {
 		t.Fatalf("Load: %v", err)
 	}
 
-	if len(r2.Servers) != 2 {
-		t.Fatalf("expected 2 servers after reload, got %d", len(r2.Servers))
+	if r2.Servers.Len() != 2 {
+		t.Fatalf("expected 2 servers after reload, got %d", r2.Servers.Len())
 	}
 
-	gh, ok := r2.Get("github")
+	gh, ok := r2.Servers.Get("github")
 	if !ok {
 		t.Fatal("github not found after reload")
 	}
@@ -154,7 +154,7 @@ func TestSaveAndReload(t *testing.T) {
 		t.Errorf("expected command=npx, got %q", gh.Command)
 	}
 
-	remote, ok := r2.Get("remote")
+	remote, ok := r2.Servers.Get("remote")
 	if !ok {
 		t.Fatal("remote not found after reload")
 	}
@@ -171,11 +171,11 @@ func TestAddSuccess(t *testing.T) {
 	r := empty()
 	srv := testServer("github")
 
-	if err := r.Add(srv); err != nil {
+	if err := r.Servers.Add(srv); err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 
-	got, ok := r.Get("github")
+	got, ok := r.Servers.Get("github")
 	if !ok {
 		t.Fatal("server not found after Add")
 	}
@@ -187,9 +187,9 @@ func TestAddSuccess(t *testing.T) {
 func TestAddDuplicate(t *testing.T) {
 	r := empty()
 	srv := testServer("github")
-	_ = r.Add(srv)
+	_ = r.Servers.Add(srv)
 
-	err := r.Add(srv)
+	err := r.Servers.Add(srv)
 	if err == nil {
 		t.Fatal("expected duplicate error")
 	}
@@ -197,15 +197,15 @@ func TestAddDuplicate(t *testing.T) {
 
 func TestUpdateSuccess(t *testing.T) {
 	r := empty()
-	_ = r.Add(testServer("github"))
+	_ = r.Servers.Add(testServer("github"))
 
 	updated := testServer("github")
 	updated.Description = "Updated description"
-	if err := r.Update("github", updated); err != nil {
+	if err := r.Servers.Update("github", updated); err != nil {
 		t.Fatalf("Update: %v", err)
 	}
 
-	got, _ := r.Get("github")
+	got, _ := r.Servers.Get("github")
 	if got.Description != "Updated description" {
 		t.Errorf("expected updated description, got %q", got.Description)
 	}
@@ -213,7 +213,7 @@ func TestUpdateSuccess(t *testing.T) {
 
 func TestUpdateNotFound(t *testing.T) {
 	r := empty()
-	err := r.Update("nonexistent", testServer("nonexistent"))
+	err := r.Servers.Update("nonexistent", testServer("nonexistent"))
 	if err == nil {
 		t.Fatal("expected not-found error")
 	}
@@ -221,20 +221,20 @@ func TestUpdateNotFound(t *testing.T) {
 
 func TestDeleteSuccess(t *testing.T) {
 	r := empty()
-	_ = r.Add(testServer("github"))
+	_ = r.Servers.Add(testServer("github"))
 
-	if err := r.Delete("github"); err != nil {
+	if err := r.DeleteServer("github"); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 
-	if _, ok := r.Get("github"); ok {
+	if _, ok := r.Servers.Get("github"); ok {
 		t.Error("server still exists after Delete")
 	}
 }
 
 func TestDeleteNotFound(t *testing.T) {
 	r := empty()
-	err := r.Delete("nonexistent")
+	err := r.DeleteServer("nonexistent")
 	if err == nil {
 		t.Fatal("expected not-found error")
 	}
@@ -242,10 +242,10 @@ func TestDeleteNotFound(t *testing.T) {
 
 func TestDeleteReferencedByTag(t *testing.T) {
 	r := empty()
-	_ = r.Add(testServer("github"))
+	_ = r.Servers.Add(testServer("github"))
 	r.Tags["core"] = []string{"github"}
 
-	err := r.Delete("github")
+	err := r.DeleteServer("github")
 	if err == nil {
 		t.Fatal("expected referenced-by-tag error")
 	}
@@ -253,11 +253,11 @@ func TestDeleteReferencedByTag(t *testing.T) {
 
 func TestList(t *testing.T) {
 	r := empty()
-	_ = r.Add(testServer("zzz"))
-	_ = r.Add(testServer("aaa"))
-	_ = r.Add(testServer("mmm"))
+	_ = r.Servers.Add(testServer("zzz"))
+	_ = r.Servers.Add(testServer("aaa"))
+	_ = r.Servers.Add(testServer("mmm"))
 
-	list := r.List()
+	list := r.Servers.List()
 	if len(list) != 3 {
 		t.Fatalf("expected 3 servers, got %d", len(list))
 	}
@@ -268,8 +268,8 @@ func TestList(t *testing.T) {
 
 func TestExpandTagSuccess(t *testing.T) {
 	r := empty()
-	_ = r.Add(testServer("github"))
-	_ = r.Add(testServer("filesystem"))
+	_ = r.Servers.Add(testServer("github"))
+	_ = r.Servers.Add(testServer("filesystem"))
 	r.Tags["core"] = []string{"github", "filesystem"}
 
 	names, err := r.ExpandTag("core")
@@ -372,11 +372,11 @@ func TestAddSkill(t *testing.T) {
 	r := empty()
 	skill := testSkill("code-review")
 
-	if err := r.AddSkill(skill); err != nil {
+	if err := r.Skills.Add(skill); err != nil {
 		t.Fatalf("AddSkill: %v", err)
 	}
 
-	got, ok := r.GetSkill("code-review")
+	got, ok := r.Skills.Get("code-review")
 	if !ok {
 		t.Fatal("skill not found after AddSkill")
 	}
@@ -394,9 +394,9 @@ func TestAddSkill(t *testing.T) {
 func TestAddSkillDuplicate(t *testing.T) {
 	r := empty()
 	skill := testSkill("code-review")
-	_ = r.AddSkill(skill)
+	_ = r.Skills.Add(skill)
 
-	err := r.AddSkill(skill)
+	err := r.Skills.Add(skill)
 	if err == nil {
 		t.Fatal("expected duplicate error")
 	}
@@ -412,7 +412,7 @@ func TestGetSkill(t *testing.T) {
 		{
 			name: "existing skill",
 			setup: func(r *Registry) {
-				_ = r.AddSkill(testSkill("code-review"))
+				_ = r.Skills.Add(testSkill("code-review"))
 			},
 			query:     "code-review",
 			wantFound: true,
@@ -430,7 +430,7 @@ func TestGetSkill(t *testing.T) {
 			r := empty()
 			tt.setup(r)
 
-			_, ok := r.GetSkill(tt.query)
+			_, ok := r.Skills.Get(tt.query)
 			if ok != tt.wantFound {
 				t.Errorf("GetSkill(%q) found=%v, want %v", tt.query, ok, tt.wantFound)
 			}
@@ -440,11 +440,11 @@ func TestGetSkill(t *testing.T) {
 
 func TestListSkills(t *testing.T) {
 	r := empty()
-	_ = r.AddSkill(testSkill("zzz-skill"))
-	_ = r.AddSkill(testSkill("aaa-skill"))
-	_ = r.AddSkill(testSkill("mmm-skill"))
+	_ = r.Skills.Add(testSkill("zzz-skill"))
+	_ = r.Skills.Add(testSkill("aaa-skill"))
+	_ = r.Skills.Add(testSkill("mmm-skill"))
 
-	list := r.ListSkills()
+	list := r.Skills.List()
 	if len(list) != 3 {
 		t.Fatalf("expected 3 skills, got %d", len(list))
 	}
@@ -455,17 +455,17 @@ func TestListSkills(t *testing.T) {
 
 func TestUpdateSkill(t *testing.T) {
 	r := empty()
-	_ = r.AddSkill(testSkill("code-review"))
+	_ = r.Skills.Add(testSkill("code-review"))
 
 	updated := model.SkillDef{
 		Description: "Updated description",
 		Source:      "/new/path.md",
 	}
-	if err := r.UpdateSkill("code-review", updated); err != nil {
+	if err := r.Skills.Update("code-review", updated); err != nil {
 		t.Fatalf("UpdateSkill: %v", err)
 	}
 
-	got, _ := r.GetSkill("code-review")
+	got, _ := r.Skills.Get("code-review")
 	if got.Description != "Updated description" {
 		t.Errorf("expected updated description, got %q", got.Description)
 	}
@@ -479,7 +479,7 @@ func TestUpdateSkill(t *testing.T) {
 
 func TestUpdateSkillNotFound(t *testing.T) {
 	r := empty()
-	err := r.UpdateSkill("nonexistent", model.SkillDef{})
+	err := r.Skills.Update("nonexistent", model.SkillDef{})
 	if err == nil {
 		t.Fatal("expected not-found error")
 	}
@@ -487,20 +487,20 @@ func TestUpdateSkillNotFound(t *testing.T) {
 
 func TestDeleteSkill(t *testing.T) {
 	r := empty()
-	_ = r.AddSkill(testSkill("code-review"))
+	_ = r.Skills.Add(testSkill("code-review"))
 
-	if err := r.DeleteSkill("code-review"); err != nil {
+	if err := r.Skills.Delete("code-review"); err != nil {
 		t.Fatalf("DeleteSkill: %v", err)
 	}
 
-	if _, ok := r.GetSkill("code-review"); ok {
+	if _, ok := r.Skills.Get("code-review"); ok {
 		t.Error("skill still exists after DeleteSkill")
 	}
 }
 
 func TestDeleteSkillNotFound(t *testing.T) {
 	r := empty()
-	err := r.DeleteSkill("nonexistent")
+	err := r.Skills.Delete("nonexistent")
 	if err == nil {
 		t.Fatal("expected not-found error")
 	}
@@ -522,11 +522,11 @@ func TestAddHook(t *testing.T) {
 	r := empty()
 	hook := testHook("lint-check")
 
-	if err := r.AddHook(hook); err != nil {
+	if err := r.Hooks.Add(hook); err != nil {
 		t.Fatalf("AddHook: %v", err)
 	}
 
-	got, ok := r.GetHook("lint-check")
+	got, ok := r.Hooks.Get("lint-check")
 	if !ok {
 		t.Fatal("hook not found after AddHook")
 	}
@@ -547,9 +547,9 @@ func TestAddHook(t *testing.T) {
 func TestAddHookDuplicate(t *testing.T) {
 	r := empty()
 	hook := testHook("lint-check")
-	_ = r.AddHook(hook)
+	_ = r.Hooks.Add(hook)
 
-	err := r.AddHook(hook)
+	err := r.Hooks.Add(hook)
 	if err == nil {
 		t.Fatal("expected duplicate error")
 	}
@@ -565,7 +565,7 @@ func TestGetHook(t *testing.T) {
 		{
 			name: "existing hook",
 			setup: func(r *Registry) {
-				_ = r.AddHook(testHook("lint-check"))
+				_ = r.Hooks.Add(testHook("lint-check"))
 			},
 			query:     "lint-check",
 			wantFound: true,
@@ -583,7 +583,7 @@ func TestGetHook(t *testing.T) {
 			r := empty()
 			tt.setup(r)
 
-			_, ok := r.GetHook(tt.query)
+			_, ok := r.Hooks.Get(tt.query)
 			if ok != tt.wantFound {
 				t.Errorf("GetHook(%q) found=%v, want %v", tt.query, ok, tt.wantFound)
 			}
@@ -593,11 +593,11 @@ func TestGetHook(t *testing.T) {
 
 func TestListHooks(t *testing.T) {
 	r := empty()
-	_ = r.AddHook(testHook("zzz-hook"))
-	_ = r.AddHook(testHook("aaa-hook"))
-	_ = r.AddHook(testHook("mmm-hook"))
+	_ = r.Hooks.Add(testHook("zzz-hook"))
+	_ = r.Hooks.Add(testHook("aaa-hook"))
+	_ = r.Hooks.Add(testHook("mmm-hook"))
 
-	list := r.ListHooks()
+	list := r.Hooks.List()
 	if len(list) != 3 {
 		t.Fatalf("expected 3 hooks, got %d", len(list))
 	}
@@ -608,7 +608,7 @@ func TestListHooks(t *testing.T) {
 
 func TestUpdateHook(t *testing.T) {
 	r := empty()
-	_ = r.AddHook(testHook("lint-check"))
+	_ = r.Hooks.Add(testHook("lint-check"))
 
 	updated := model.HookDef{
 		Event:   "PostToolUse",
@@ -616,11 +616,11 @@ func TestUpdateHook(t *testing.T) {
 		Command: "/usr/bin/updated-hook",
 		Timeout: 10000,
 	}
-	if err := r.UpdateHook("lint-check", updated); err != nil {
+	if err := r.Hooks.Update("lint-check", updated); err != nil {
 		t.Fatalf("UpdateHook: %v", err)
 	}
 
-	got, _ := r.GetHook("lint-check")
+	got, _ := r.Hooks.Get("lint-check")
 	if got.Event != "PostToolUse" {
 		t.Errorf("expected updated event, got %q", got.Event)
 	}
@@ -640,7 +640,7 @@ func TestUpdateHook(t *testing.T) {
 
 func TestUpdateHookNotFound(t *testing.T) {
 	r := empty()
-	err := r.UpdateHook("nonexistent", model.HookDef{})
+	err := r.Hooks.Update("nonexistent", model.HookDef{})
 	if err == nil {
 		t.Fatal("expected not-found error")
 	}
@@ -648,20 +648,20 @@ func TestUpdateHookNotFound(t *testing.T) {
 
 func TestDeleteHook(t *testing.T) {
 	r := empty()
-	_ = r.AddHook(testHook("lint-check"))
+	_ = r.Hooks.Add(testHook("lint-check"))
 
-	if err := r.DeleteHook("lint-check"); err != nil {
+	if err := r.Hooks.Delete("lint-check"); err != nil {
 		t.Fatalf("DeleteHook: %v", err)
 	}
 
-	if _, ok := r.GetHook("lint-check"); ok {
+	if _, ok := r.Hooks.Get("lint-check"); ok {
 		t.Error("hook still exists after DeleteHook")
 	}
 }
 
 func TestDeleteHookNotFound(t *testing.T) {
 	r := empty()
-	err := r.DeleteHook("nonexistent")
+	err := r.Hooks.Delete("nonexistent")
 	if err == nil {
 		t.Fatal("expected not-found error")
 	}
@@ -681,11 +681,11 @@ func TestAddPermission(t *testing.T) {
 	r := empty()
 	perm := testPermission("bash-all")
 
-	if err := r.AddPermission(perm); err != nil {
+	if err := r.Permissions.Add(perm); err != nil {
 		t.Fatalf("AddPermission: %v", err)
 	}
 
-	got, ok := r.GetPermission("bash-all")
+	got, ok := r.Permissions.Get("bash-all")
 	if !ok {
 		t.Fatal("permission not found after AddPermission")
 	}
@@ -703,9 +703,9 @@ func TestAddPermission(t *testing.T) {
 func TestAddPermissionDuplicate(t *testing.T) {
 	r := empty()
 	perm := testPermission("bash-all")
-	_ = r.AddPermission(perm)
+	_ = r.Permissions.Add(perm)
 
-	err := r.AddPermission(perm)
+	err := r.Permissions.Add(perm)
 	if err == nil {
 		t.Fatal("expected duplicate error")
 	}
@@ -721,7 +721,7 @@ func TestGetPermission(t *testing.T) {
 		{
 			name: "existing permission",
 			setup: func(r *Registry) {
-				_ = r.AddPermission(testPermission("bash-all"))
+				_ = r.Permissions.Add(testPermission("bash-all"))
 			},
 			query:     "bash-all",
 			wantFound: true,
@@ -739,7 +739,7 @@ func TestGetPermission(t *testing.T) {
 			r := empty()
 			tt.setup(r)
 
-			_, ok := r.GetPermission(tt.query)
+			_, ok := r.Permissions.Get(tt.query)
 			if ok != tt.wantFound {
 				t.Errorf("GetPermission(%q) found=%v, want %v", tt.query, ok, tt.wantFound)
 			}
@@ -749,11 +749,11 @@ func TestGetPermission(t *testing.T) {
 
 func TestListPermissions(t *testing.T) {
 	r := empty()
-	_ = r.AddPermission(testPermission("zzz-perm"))
-	_ = r.AddPermission(testPermission("aaa-perm"))
-	_ = r.AddPermission(testPermission("mmm-perm"))
+	_ = r.Permissions.Add(testPermission("zzz-perm"))
+	_ = r.Permissions.Add(testPermission("aaa-perm"))
+	_ = r.Permissions.Add(testPermission("mmm-perm"))
 
-	list := r.ListPermissions()
+	list := r.Permissions.List()
 	if len(list) != 3 {
 		t.Fatalf("expected 3 permissions, got %d", len(list))
 	}
@@ -764,17 +764,17 @@ func TestListPermissions(t *testing.T) {
 
 func TestUpdatePermission(t *testing.T) {
 	r := empty()
-	_ = r.AddPermission(testPermission("bash-all"))
+	_ = r.Permissions.Add(testPermission("bash-all"))
 
 	updated := model.PermissionRule{
 		Rule: "WebFetch(domain:example.com)",
 		Type: "deny",
 	}
-	if err := r.UpdatePermission("bash-all", updated); err != nil {
+	if err := r.Permissions.Update("bash-all", updated); err != nil {
 		t.Fatalf("UpdatePermission: %v", err)
 	}
 
-	got, _ := r.GetPermission("bash-all")
+	got, _ := r.Permissions.Get("bash-all")
 	if got.Rule != "WebFetch(domain:example.com)" {
 		t.Errorf("expected updated rule, got %q", got.Rule)
 	}
@@ -788,7 +788,7 @@ func TestUpdatePermission(t *testing.T) {
 
 func TestUpdatePermissionNotFound(t *testing.T) {
 	r := empty()
-	err := r.UpdatePermission("nonexistent", model.PermissionRule{})
+	err := r.Permissions.Update("nonexistent", model.PermissionRule{})
 	if err == nil {
 		t.Fatal("expected not-found error")
 	}
@@ -796,20 +796,20 @@ func TestUpdatePermissionNotFound(t *testing.T) {
 
 func TestDeletePermission(t *testing.T) {
 	r := empty()
-	_ = r.AddPermission(testPermission("bash-all"))
+	_ = r.Permissions.Add(testPermission("bash-all"))
 
-	if err := r.DeletePermission("bash-all"); err != nil {
+	if err := r.Permissions.Delete("bash-all"); err != nil {
 		t.Fatalf("DeletePermission: %v", err)
 	}
 
-	if _, ok := r.GetPermission("bash-all"); ok {
+	if _, ok := r.Permissions.Get("bash-all"); ok {
 		t.Error("permission still exists after DeletePermission")
 	}
 }
 
 func TestDeletePermissionNotFound(t *testing.T) {
 	r := empty()
-	err := r.DeletePermission("nonexistent")
+	err := r.Permissions.Delete("nonexistent")
 	if err == nil {
 		t.Fatal("expected not-found error")
 	}
@@ -828,11 +828,11 @@ func TestAddTemplate(t *testing.T) {
 	r := empty()
 	tmpl := testTemplate("golang-project")
 
-	if err := r.AddTemplate(tmpl); err != nil {
+	if err := r.Templates.Add(tmpl); err != nil {
 		t.Fatalf("AddTemplate: %v", err)
 	}
 
-	got, ok := r.GetTemplate("golang-project")
+	got, ok := r.Templates.Get("golang-project")
 	if !ok {
 		t.Fatal("template not found after AddTemplate")
 	}
@@ -847,9 +847,9 @@ func TestAddTemplate(t *testing.T) {
 func TestAddTemplateDuplicate(t *testing.T) {
 	r := empty()
 	tmpl := testTemplate("golang-project")
-	_ = r.AddTemplate(tmpl)
+	_ = r.Templates.Add(tmpl)
 
-	err := r.AddTemplate(tmpl)
+	err := r.Templates.Add(tmpl)
 	if err == nil {
 		t.Fatal("expected duplicate error")
 	}
@@ -865,7 +865,7 @@ func TestGetTemplate(t *testing.T) {
 		{
 			name: "existing template",
 			setup: func(r *Registry) {
-				_ = r.AddTemplate(testTemplate("golang-project"))
+				_ = r.Templates.Add(testTemplate("golang-project"))
 			},
 			query:     "golang-project",
 			wantFound: true,
@@ -883,7 +883,7 @@ func TestGetTemplate(t *testing.T) {
 			r := empty()
 			tt.setup(r)
 
-			_, ok := r.GetTemplate(tt.query)
+			_, ok := r.Templates.Get(tt.query)
 			if ok != tt.wantFound {
 				t.Errorf("GetTemplate(%q) found=%v, want %v", tt.query, ok, tt.wantFound)
 			}
@@ -893,11 +893,11 @@ func TestGetTemplate(t *testing.T) {
 
 func TestListTemplates(t *testing.T) {
 	r := empty()
-	_ = r.AddTemplate(testTemplate("zzz-template"))
-	_ = r.AddTemplate(testTemplate("aaa-template"))
-	_ = r.AddTemplate(testTemplate("mmm-template"))
+	_ = r.Templates.Add(testTemplate("zzz-template"))
+	_ = r.Templates.Add(testTemplate("aaa-template"))
+	_ = r.Templates.Add(testTemplate("mmm-template"))
 
-	list := r.ListTemplates()
+	list := r.Templates.List()
 	if len(list) != 3 {
 		t.Fatalf("expected 3 templates, got %d", len(list))
 	}
@@ -908,16 +908,16 @@ func TestListTemplates(t *testing.T) {
 
 func TestUpdateTemplate(t *testing.T) {
 	r := empty()
-	_ = r.AddTemplate(testTemplate("golang-project"))
+	_ = r.Templates.Add(testTemplate("golang-project"))
 
 	updated := model.TemplateDef{
 		Source: "/new/templates/updated.md",
 	}
-	if err := r.UpdateTemplate("golang-project", updated); err != nil {
+	if err := r.Templates.Update("golang-project", updated); err != nil {
 		t.Fatalf("UpdateTemplate: %v", err)
 	}
 
-	got, _ := r.GetTemplate("golang-project")
+	got, _ := r.Templates.Get("golang-project")
 	if got.Source != "/new/templates/updated.md" {
 		t.Errorf("expected updated source, got %q", got.Source)
 	}
@@ -928,7 +928,7 @@ func TestUpdateTemplate(t *testing.T) {
 
 func TestUpdateTemplateNotFound(t *testing.T) {
 	r := empty()
-	err := r.UpdateTemplate("nonexistent", model.TemplateDef{})
+	err := r.Templates.Update("nonexistent", model.TemplateDef{})
 	if err == nil {
 		t.Fatal("expected not-found error")
 	}
@@ -936,20 +936,20 @@ func TestUpdateTemplateNotFound(t *testing.T) {
 
 func TestDeleteTemplate(t *testing.T) {
 	r := empty()
-	_ = r.AddTemplate(testTemplate("golang-project"))
+	_ = r.Templates.Add(testTemplate("golang-project"))
 
-	if err := r.DeleteTemplate("golang-project"); err != nil {
+	if err := r.Templates.Delete("golang-project"); err != nil {
 		t.Fatalf("DeleteTemplate: %v", err)
 	}
 
-	if _, ok := r.GetTemplate("golang-project"); ok {
+	if _, ok := r.Templates.Get("golang-project"); ok {
 		t.Error("template still exists after DeleteTemplate")
 	}
 }
 
 func TestDeleteTemplateNotFound(t *testing.T) {
 	r := empty()
-	err := r.DeleteTemplate("nonexistent")
+	err := r.Templates.Delete("nonexistent")
 	if err == nil {
 		t.Fatal("expected not-found error")
 	}
@@ -965,55 +965,55 @@ func TestLoadSaveRoundTripAllEntities(t *testing.T) {
 	r := empty()
 
 	// Servers
-	_ = r.Add(testServer("github"))
-	_ = r.Add(testHTTPServer("remote-api"))
+	_ = r.Servers.Add(testServer("github"))
+	_ = r.Servers.Add(testHTTPServer("remote-api"))
 
 	// Skills
-	_ = r.AddSkill(model.SkillDef{
+	_ = r.Skills.Add(model.SkillDef{
 		Name:        "code-review",
 		Description: "Reviews code changes",
 		Source:      "/skills/code-review.md",
 	})
-	_ = r.AddSkill(model.SkillDef{
+	_ = r.Skills.Add(model.SkillDef{
 		Name:        "refactor",
 		Description: "Refactors code",
 		Source:      "/skills/refactor.md",
 	})
 
 	// Hooks
-	_ = r.AddHook(model.HookDef{
+	_ = r.Hooks.Add(model.HookDef{
 		Name:    "pre-lint",
 		Event:   "PreToolUse",
 		Matcher: "Bash",
 		Command: "/usr/bin/lint",
 		Timeout: 3000,
 	})
-	_ = r.AddHook(model.HookDef{
+	_ = r.Hooks.Add(model.HookDef{
 		Name:    "post-test",
 		Event:   "PostToolUse",
 		Command: "/usr/bin/report",
 	})
 
 	// Permissions
-	_ = r.AddPermission(model.PermissionRule{
+	_ = r.Permissions.Add(model.PermissionRule{
 		Name: "allow-bash",
 		Rule: "Bash(*)",
 		Type: "allow",
 	})
-	_ = r.AddPermission(model.PermissionRule{
+	_ = r.Permissions.Add(model.PermissionRule{
 		Name: "deny-web",
 		Rule: "WebFetch(domain:evil.com)",
 		Type: "deny",
 	})
 
 	// Templates
-	_ = r.AddTemplate(model.TemplateDef{
+	_ = r.Templates.Add(model.TemplateDef{
 		Name:   "go-project",
 		Source: "/templates/go-project.md",
 	})
 
 	// Prompts
-	_ = r.AddPrompt(model.PromptDef{
+	_ = r.Prompts.Add(model.PromptDef{
 		Name:        "defensive-security",
 		Description: "Defensive-only security guardrails",
 		Source:      "prompts/defensive-security.md",
@@ -1038,10 +1038,10 @@ func TestLoadSaveRoundTripAllEntities(t *testing.T) {
 	}
 
 	// Verify servers
-	if len(r2.Servers) != 2 {
-		t.Fatalf("expected 2 servers, got %d", len(r2.Servers))
+	if r2.Servers.Len() != 2 {
+		t.Fatalf("expected 2 servers, got %d", r2.Servers.Len())
 	}
-	gh, ok := r2.Get("github")
+	gh, ok := r2.Servers.Get("github")
 	if !ok {
 		t.Fatal("github server not found after round-trip")
 	}
@@ -1052,7 +1052,7 @@ func TestLoadSaveRoundTripAllEntities(t *testing.T) {
 		t.Errorf("expected stdio transport, got %q", gh.Transport)
 	}
 
-	remote, ok := r2.Get("remote-api")
+	remote, ok := r2.Servers.Get("remote-api")
 	if !ok {
 		t.Fatal("remote-api server not found after round-trip")
 	}
@@ -1064,10 +1064,10 @@ func TestLoadSaveRoundTripAllEntities(t *testing.T) {
 	}
 
 	// Verify skills
-	if len(r2.Skills) != 2 {
-		t.Fatalf("expected 2 skills, got %d", len(r2.Skills))
+	if r2.Skills.Len() != 2 {
+		t.Fatalf("expected 2 skills, got %d", r2.Skills.Len())
 	}
-	cr, ok := r2.GetSkill("code-review")
+	cr, ok := r2.Skills.Get("code-review")
 	if !ok {
 		t.Fatal("code-review skill not found after round-trip")
 	}
@@ -1081,7 +1081,7 @@ func TestLoadSaveRoundTripAllEntities(t *testing.T) {
 		t.Errorf("expected skill source, got %q", cr.Source)
 	}
 
-	rf, ok := r2.GetSkill("refactor")
+	rf, ok := r2.Skills.Get("refactor")
 	if !ok {
 		t.Fatal("refactor skill not found after round-trip")
 	}
@@ -1090,10 +1090,10 @@ func TestLoadSaveRoundTripAllEntities(t *testing.T) {
 	}
 
 	// Verify hooks
-	if len(r2.Hooks) != 2 {
-		t.Fatalf("expected 2 hooks, got %d", len(r2.Hooks))
+	if r2.Hooks.Len() != 2 {
+		t.Fatalf("expected 2 hooks, got %d", r2.Hooks.Len())
 	}
-	pl, ok := r2.GetHook("pre-lint")
+	pl, ok := r2.Hooks.Get("pre-lint")
 	if !ok {
 		t.Fatal("pre-lint hook not found after round-trip")
 	}
@@ -1113,7 +1113,7 @@ func TestLoadSaveRoundTripAllEntities(t *testing.T) {
 		t.Errorf("expected hook timeout=3000, got %d", pl.Timeout)
 	}
 
-	pt, ok := r2.GetHook("post-test")
+	pt, ok := r2.Hooks.Get("post-test")
 	if !ok {
 		t.Fatal("post-test hook not found after round-trip")
 	}
@@ -1122,10 +1122,10 @@ func TestLoadSaveRoundTripAllEntities(t *testing.T) {
 	}
 
 	// Verify permissions
-	if len(r2.Permissions) != 2 {
-		t.Fatalf("expected 2 permissions, got %d", len(r2.Permissions))
+	if r2.Permissions.Len() != 2 {
+		t.Fatalf("expected 2 permissions, got %d", r2.Permissions.Len())
 	}
-	ab, ok := r2.GetPermission("allow-bash")
+	ab, ok := r2.Permissions.Get("allow-bash")
 	if !ok {
 		t.Fatal("allow-bash permission not found after round-trip")
 	}
@@ -1139,7 +1139,7 @@ func TestLoadSaveRoundTripAllEntities(t *testing.T) {
 		t.Errorf("expected permission type=allow, got %q", ab.Type)
 	}
 
-	dw, ok := r2.GetPermission("deny-web")
+	dw, ok := r2.Permissions.Get("deny-web")
 	if !ok {
 		t.Fatal("deny-web permission not found after round-trip")
 	}
@@ -1148,10 +1148,10 @@ func TestLoadSaveRoundTripAllEntities(t *testing.T) {
 	}
 
 	// Verify templates
-	if len(r2.Templates) != 1 {
-		t.Fatalf("expected 1 template, got %d", len(r2.Templates))
+	if r2.Templates.Len() != 1 {
+		t.Fatalf("expected 1 template, got %d", r2.Templates.Len())
 	}
-	gp, ok := r2.GetTemplate("go-project")
+	gp, ok := r2.Templates.Get("go-project")
 	if !ok {
 		t.Fatal("go-project template not found after round-trip")
 	}
@@ -1163,10 +1163,10 @@ func TestLoadSaveRoundTripAllEntities(t *testing.T) {
 	}
 
 	// Verify prompts
-	if len(r2.Prompts) != 1 {
-		t.Fatalf("expected 1 prompt, got %d", len(r2.Prompts))
+	if r2.Prompts.Len() != 1 {
+		t.Fatalf("expected 1 prompt, got %d", r2.Prompts.Len())
 	}
-	dp, ok := r2.GetPrompt("defensive-security")
+	dp, ok := r2.Prompts.Get("defensive-security")
 	if !ok {
 		t.Fatal("defensive-security prompt not found after round-trip")
 	}
@@ -1214,11 +1214,11 @@ func TestAddPrompt(t *testing.T) {
 	r := empty()
 	p := testPrompt("defensive-security", 10)
 
-	if err := r.AddPrompt(p); err != nil {
+	if err := r.Prompts.Add(p); err != nil {
 		t.Fatalf("AddPrompt: %v", err)
 	}
 
-	got, ok := r.GetPrompt("defensive-security")
+	got, ok := r.Prompts.Get("defensive-security")
 	if !ok {
 		t.Fatal("prompt not found after AddPrompt")
 	}
@@ -1232,9 +1232,9 @@ func TestAddPrompt(t *testing.T) {
 
 func TestAddPromptDuplicate(t *testing.T) {
 	r := empty()
-	_ = r.AddPrompt(testPrompt("my-prompt", 0))
+	_ = r.Prompts.Add(testPrompt("my-prompt", 0))
 
-	err := r.AddPrompt(testPrompt("my-prompt", 0))
+	err := r.Prompts.Add(testPrompt("my-prompt", 0))
 	if err == nil {
 		t.Fatal("expected duplicate error")
 	}
@@ -1242,11 +1242,11 @@ func TestAddPromptDuplicate(t *testing.T) {
 
 func TestListPrompts_SortedByOrderThenName(t *testing.T) {
 	r := empty()
-	_ = r.AddPrompt(testPrompt("zzz-prompt", 10))
-	_ = r.AddPrompt(testPrompt("aaa-prompt", 20))
-	_ = r.AddPrompt(testPrompt("bbb-prompt", 10))
+	_ = r.Prompts.Add(testPrompt("zzz-prompt", 10))
+	_ = r.Prompts.Add(testPrompt("aaa-prompt", 20))
+	_ = r.Prompts.Add(testPrompt("bbb-prompt", 10))
 
-	list := r.ListPrompts()
+	list := r.Prompts.List()
 	if len(list) != 3 {
 		t.Fatalf("expected 3 prompts, got %d", len(list))
 	}
@@ -1263,18 +1263,18 @@ func TestListPrompts_SortedByOrderThenName(t *testing.T) {
 
 func TestUpdatePrompt(t *testing.T) {
 	r := empty()
-	_ = r.AddPrompt(testPrompt("my-prompt", 10))
+	_ = r.Prompts.Add(testPrompt("my-prompt", 10))
 
 	updated := model.PromptDef{
 		Description: "Updated description",
 		Source:      "prompts/updated.md",
 		Order:       20,
 	}
-	if err := r.UpdatePrompt("my-prompt", updated); err != nil {
+	if err := r.Prompts.Update("my-prompt", updated); err != nil {
 		t.Fatalf("UpdatePrompt: %v", err)
 	}
 
-	got, _ := r.GetPrompt("my-prompt")
+	got, _ := r.Prompts.Get("my-prompt")
 	if got.Description != "Updated description" {
 		t.Errorf("expected updated description, got %q", got.Description)
 	}
@@ -1288,7 +1288,7 @@ func TestUpdatePrompt(t *testing.T) {
 
 func TestUpdatePromptNotFound(t *testing.T) {
 	r := empty()
-	err := r.UpdatePrompt("nonexistent", model.PromptDef{})
+	err := r.Prompts.Update("nonexistent", model.PromptDef{})
 	if err == nil {
 		t.Fatal("expected not-found error")
 	}
@@ -1296,20 +1296,20 @@ func TestUpdatePromptNotFound(t *testing.T) {
 
 func TestDeletePrompt(t *testing.T) {
 	r := empty()
-	_ = r.AddPrompt(testPrompt("my-prompt", 0))
+	_ = r.Prompts.Add(testPrompt("my-prompt", 0))
 
-	if err := r.DeletePrompt("my-prompt"); err != nil {
+	if err := r.Prompts.Delete("my-prompt"); err != nil {
 		t.Fatalf("DeletePrompt: %v", err)
 	}
 
-	if _, ok := r.GetPrompt("my-prompt"); ok {
+	if _, ok := r.Prompts.Get("my-prompt"); ok {
 		t.Error("prompt still exists after DeletePrompt")
 	}
 }
 
 func TestDeletePromptNotFound(t *testing.T) {
 	r := empty()
-	err := r.DeletePrompt("nonexistent")
+	err := r.Prompts.Delete("nonexistent")
 	if err == nil {
 		t.Fatal("expected not-found error")
 	}

@@ -28,6 +28,13 @@ mkdir -p "$SCRIPT_DIR/actual"
 FAILED=0
 PASSED=0
 
+# Normalize VHS text output for stable comparison.
+# Strips prompt cursors, trailing whitespace, and collapses blank line runs.
+normalize() {
+  sed -e 's/^>//g' -e 's/>[[:space:]]*$//g' -e 's/[[:space:]]*$//' "$1" \
+    | cat -s
+}
+
 run_tape() {
   local tape="$1"
   local name
@@ -60,18 +67,22 @@ run_tape() {
   if [[ -f "$actual" ]]; then
     if [[ "$UPDATE" == "true" ]]; then
       mkdir -p "$SCRIPT_DIR/golden"
-      cp "$actual" "$golden"
+      normalize "$actual" > "$golden"
       echo "  UPDATED: $golden"
       PASSED=$((PASSED + 1))
     elif [[ -f "$golden" ]]; then
-      if diff -u "$golden" "$actual" > /dev/null 2>&1; then
+      local norm_actual
+      norm_actual="$(mktemp)"
+      normalize "$actual" > "$norm_actual"
+      if diff -u "$golden" "$norm_actual" > /dev/null 2>&1; then
         echo "  PASS: $name"
         PASSED=$((PASSED + 1))
       else
         echo "  FAIL: output differs for $name"
-        diff -u "$golden" "$actual" || true
+        diff -u "$golden" "$norm_actual" || true
         FAILED=$((FAILED + 1))
       fi
+      rm -f "$norm_actual"
     else
       echo "  SKIP: no golden file for $name (run with --update to create)"
       PASSED=$((PASSED + 1))

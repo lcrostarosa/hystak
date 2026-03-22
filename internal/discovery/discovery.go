@@ -158,7 +158,7 @@ func (e *Engine) ScanMCPs(projectPath string) []DiscoveredMCP {
 
 	// Registry: all servers from hystak registry
 	if e.registry != nil {
-		for _, srv := range e.registry.List() {
+		for _, srv := range e.registry.Servers.List() {
 			results = append(results, DiscoveredMCP{
 				Name:      srv.Name,
 				ServerDef: srv,
@@ -188,7 +188,7 @@ func (e *Engine) ScanSkills(projectPath string) []DiscoveredSkill {
 
 	// Registry: all skills from hystak registry
 	if e.registry != nil {
-		for _, skill := range e.registry.ListSkills() {
+		for _, skill := range e.registry.Skills.List() {
 			results = append(results, DiscoveredSkill{
 				Name:        skill.Name,
 				Path:        skill.Source,
@@ -219,7 +219,7 @@ func (e *Engine) ScanHooks(projectPath string) []DiscoveredHook {
 
 	// Registry: all hooks from hystak registry
 	if e.registry != nil {
-		for _, hook := range e.registry.ListHooks() {
+		for _, hook := range e.registry.Hooks.List() {
 			results = append(results, DiscoveredHook{
 				Name:    hook.Name,
 				Event:   hook.Event,
@@ -251,7 +251,7 @@ func (e *Engine) ScanPermissions(projectPath string) []DiscoveredPermission {
 
 	// Registry: all permissions from hystak registry
 	if e.registry != nil {
-		for _, perm := range e.registry.ListPermissions() {
+		for _, perm := range e.registry.Permissions.List() {
 			results = append(results, DiscoveredPermission{
 				Name:   perm.Name,
 				Rule:   perm.Rule,
@@ -285,7 +285,7 @@ func (e *Engine) ScanEnvVars(projectPath string) []DiscoveredEnvVar {
 func (e *Engine) ScanPrompts() []DiscoveredPrompt {
 	var results []DiscoveredPrompt
 	if e.registry != nil {
-		for _, prompt := range e.registry.ListPrompts() {
+		for _, prompt := range e.registry.Prompts.List() {
 			results = append(results, DiscoveredPrompt{
 				Name:        prompt.Name,
 				Description: prompt.Description,

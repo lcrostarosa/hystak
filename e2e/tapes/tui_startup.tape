@@ -1,8 +1,8 @@
 # E2E smoke test: TUI launches, shows tabs, and quits cleanly
 Output e2e/actual/tui_startup.gif
 Set Shell "bash"
-Set Width 120
-Set Height 35
+Set Width 960
+Set Height 600
 Set FontSize 14
 
 Type "hystak --config-dir $HYSTAK_CONFIG_DIR manage"

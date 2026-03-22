@@ -8,3 +8,6 @@ type HookDef struct {
 	Command string `yaml:"command"`
 	Timeout int    `yaml:"timeout,omitempty"` // ms
 }
+
+func (h *HookDef) ResourceName() string    { return h.Name }
+func (h *HookDef) SetResourceName(n string) { h.Name = n }

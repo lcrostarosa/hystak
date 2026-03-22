@@ -290,55 +290,6 @@ func appendContinue(args []string) []string {
 	return append(result, "--continue")
 }
 
-// launchBare resolves "claude" on PATH and runs it in the current directory
-// with a post-exit reconfiguration loop (relaunch or quit only).
-func launchBare(cmd *cobra.Command, extraArgs []string) error {
-	execPath, err := launch.ResolveExecutable("claude")
-	if err != nil {
-		return err
-	}
-
-	cwd, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("getting current directory: %w", err)
-	}
-
-	isRelaunch := false
-	for {
-		launchArgs := extraArgs
-		if isRelaunch {
-			launchArgs = appendContinue(extraArgs)
-		}
-
-		exitCode, err := launch.RunCommand(execPath, launchArgs, cwd)
-		if err != nil {
-			return err
-		}
-
-		var reader io.Reader = os.Stdin
-		if cmd != nil {
-			reader = cmd.InOrStdin()
-		}
-		var w io.Writer = os.Stderr
-		if cmd != nil {
-			w = cmd.ErrOrStderr()
-		}
-
-		_, _ = fmt.Fprintf(w, "\nClaude exited (code %d).\n", exitCode)
-		_, _ = fmt.Fprintf(w, "[R]elaunch / [Q]uit: ")
-
-		scanner := bufio.NewScanner(reader)
-		if scanner.Scan() {
-			line := strings.TrimSpace(strings.ToLower(scanner.Text()))
-			if len(line) > 0 && line[0] == 'r' {
-				isRelaunch = true
-				continue
-			}
-		}
-		return nil
-	}
-}
-
 // getIsolation returns the isolation strategy from the project's active profile.
 func getIsolation(proj model.Project) profile.IsolationStrategy {
 	if proj.ActiveProfile == "" {

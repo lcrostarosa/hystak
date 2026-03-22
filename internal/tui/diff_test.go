@@ -33,8 +33,16 @@ func testDiffService(t *testing.T, registryServers map[string]model.ServerDef, d
 	_ = os.WriteFile(filepath.Join(projectDir, ".mcp.json"), data, 0o644)
 
 	reg := &registry.Registry{
-		Servers: registryServers,
-		Tags:    make(map[string][]string),
+		Servers:     registry.NewStore[model.ServerDef, *model.ServerDef]("server"),
+		Skills:      registry.NewStore[model.SkillDef, *model.SkillDef]("skill"),
+		Hooks:       registry.NewStore[model.HookDef, *model.HookDef]("hook"),
+		Permissions: registry.NewStore[model.PermissionRule, *model.PermissionRule]("permission"),
+		Templates:   registry.NewStore[model.TemplateDef, *model.TemplateDef]("template"),
+		Prompts:     registry.NewStore[model.PromptDef, *model.PromptDef]("prompt"),
+		Tags:        make(map[string][]string),
+	}
+	for _, srv := range registryServers {
+		_ = reg.Servers.Add(srv)
 	}
 
 	store := &project.Store{

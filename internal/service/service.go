@@ -244,7 +244,7 @@ func (s *Service) resolveEffectiveConfig(proj model.Project) (effectiveConfig, e
 func (s *Service) resolveExpectedServers(cfg effectiveConfig) (map[string]model.ServerDef, error) {
 	expected := make(map[string]model.ServerDef, len(cfg.mcps))
 	for _, name := range cfg.mcps {
-		srv, ok := s.registry.Get(name)
+		srv, ok := s.registry.Servers.Get(name)
 		if !ok {
 			return nil, fmt.Errorf("server %q not found in registry", name)
 		}
@@ -538,7 +538,7 @@ func (s *Service) syncSkills(projectPath string, skillNames []string) error {
 
 	skills := make([]model.SkillDef, 0, len(skillNames))
 	for _, name := range skillNames {
-		skill, ok := s.registry.GetSkill(name)
+		skill, ok := s.registry.Skills.Get(name)
 		if !ok {
 			// Not in registry — likely discovered from the filesystem
 			// and already deployed. Skip silently.
@@ -562,7 +562,7 @@ func (s *Service) syncSettings(projectPath string, hookNames, permNames []string
 
 	hooks := make([]model.HookDef, 0, len(hookNames))
 	for _, name := range hookNames {
-		hook, ok := s.registry.GetHook(name)
+		hook, ok := s.registry.Hooks.Get(name)
 		if !ok {
 			// Not in registry — likely discovered from the filesystem
 			// and already deployed. Skip silently.
@@ -573,7 +573,7 @@ func (s *Service) syncSettings(projectPath string, hookNames, permNames []string
 
 	permissions := make([]model.PermissionRule, 0, len(permNames))
 	for _, name := range permNames {
-		perm, ok := s.registry.GetPermission(name)
+		perm, ok := s.registry.Permissions.Get(name)
 		if !ok {
 			// Not in registry — likely discovered from the filesystem
 			// and already deployed. Skip silently.
@@ -593,7 +593,7 @@ func (s *Service) syncClaudeMD(projectPath string, templateName string, promptNa
 
 	var templateSource string
 	if templateName != "" {
-		tmpl, ok := s.registry.GetTemplate(templateName)
+		tmpl, ok := s.registry.Templates.Get(templateName)
 		if !ok {
 			return hysterr.TemplateNotFound(templateName)
 		}
@@ -629,7 +629,7 @@ func (s *Service) resolvePromptSources(promptNames []string) []string {
 			continue
 		}
 		seen[name] = true
-		prompt, ok := s.registry.GetPrompt(name)
+		prompt, ok := s.registry.Prompts.Get(name)
 		if !ok {
 			continue // not in registry, skip silently
 		}
@@ -661,7 +661,7 @@ func (s *Service) PreviewComposedPrompts(promptNames []string, templateName stri
 	var buf strings.Builder
 
 	if templateName != "" {
-		tmpl, ok := s.registry.GetTemplate(templateName)
+		tmpl, ok := s.registry.Templates.Get(templateName)
 		if !ok {
 			return "", hysterr.TemplateNotFound(templateName)
 		}
@@ -723,7 +723,7 @@ func (s *Service) PreflightSync(projectName string) ([]SyncConflict, error) {
 	if s.skillsDeployer != nil && len(cfg.skills) > 0 {
 		skills := make([]model.SkillDef, 0, len(cfg.skills))
 		for _, name := range cfg.skills {
-			if skill, ok := s.registry.GetSkill(name); ok {
+			if skill, ok := s.registry.Skills.Get(name); ok {
 				skills = append(skills, skill)
 			}
 		}
@@ -741,13 +741,13 @@ func (s *Service) PreflightSync(projectName string) ([]SyncConflict, error) {
 	if s.settingsDeployer != nil {
 		hooks := make([]model.HookDef, 0, len(cfg.hooks))
 		for _, name := range cfg.hooks {
-			if hook, ok := s.registry.GetHook(name); ok {
+			if hook, ok := s.registry.Hooks.Get(name); ok {
 				hooks = append(hooks, hook)
 			}
 		}
 		permissions := make([]model.PermissionRule, 0, len(cfg.permissions))
 		for _, name := range cfg.permissions {
-			if perm, ok := s.registry.GetPermission(name); ok {
+			if perm, ok := s.registry.Permissions.Get(name); ok {
 				permissions = append(permissions, perm)
 			}
 		}
@@ -901,7 +901,7 @@ func (s *Service) ImportFromFile(configPath string) ([]ImportCandidate, error) {
 
 	var candidates []ImportCandidate
 	for name, srv := range servers {
-		_, conflict := s.registry.Get(name)
+		_, conflict := s.registry.Servers.Get(name)
 		candidates = append(candidates, ImportCandidate{
 			Name:       name,
 			Server:     srv,
@@ -927,20 +927,20 @@ func (s *Service) ApplyImport(candidates []ImportCandidate) error {
 			case ImportKeep, ImportSkip:
 				continue
 			case ImportReplace:
-				if err := s.registry.Update(c.Name, c.Server); err != nil {
+				if err := s.registry.Servers.Update(c.Name, c.Server); err != nil {
 					return fmt.Errorf("replacing server %q: %w", c.Name, err)
 				}
 			case ImportRename:
 				srv := c.Server
 				srv.Name = c.RenameTo
-				if err := s.registry.Add(srv); err != nil {
+				if err := s.registry.Servers.Add(srv); err != nil {
 					return fmt.Errorf("adding renamed server %q: %w", c.RenameTo, err)
 				}
 			default:
 				continue // unresolved conflicts are skipped
 			}
 		} else {
-			if err := s.registry.Add(c.Server); err != nil {
+			if err := s.registry.Servers.Add(c.Server); err != nil {
 				return fmt.Errorf("adding server %q: %w", c.Name, err)
 			}
 		}

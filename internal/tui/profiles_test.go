@@ -14,35 +14,35 @@ import (
 
 func testProjectService() *service.Service {
 	reg := &registry.Registry{
-		Servers: map[string]model.ServerDef{
-			"github": {
-				Name:      "github",
-				Transport: model.TransportStdio,
-				Command:   "npx",
-				Args:      []string{"-y", "@modelcontextprotocol/server-github"},
-				Env:       map[string]string{"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
-			},
-			"qdrant": {
-				Name:        "qdrant",
-				Description: "Qdrant vector database",
-				Transport:   model.TransportHTTP,
-				URL:         "http://localhost:6333/mcp",
-			},
-			"slack": {
-				Name:      "slack",
-				Transport: model.TransportStdio,
-				Command:   "npx",
-				Args:      []string{"-y", "@modelcontextprotocol/server-slack"},
-			},
-		},
+		Servers:     registry.NewStore[model.ServerDef, *model.ServerDef]("server"),
+		Skills:      registry.NewStore[model.SkillDef, *model.SkillDef]("skill"),
+		Hooks:       registry.NewStore[model.HookDef, *model.HookDef]("hook"),
+		Permissions: registry.NewStore[model.PermissionRule, *model.PermissionRule]("permission"),
+		Templates:   registry.NewStore[model.TemplateDef, *model.TemplateDef]("template"),
+		Prompts:     registry.NewStore[model.PromptDef, *model.PromptDef]("prompt"),
 		Tags: map[string][]string{
 			"core": {"github", "qdrant"},
 		},
-		Skills:      map[string]model.SkillDef{},
-		Hooks:       map[string]model.HookDef{},
-		Permissions: map[string]model.PermissionRule{},
-		Templates:   map[string]model.TemplateDef{},
 	}
+	_ = reg.Servers.Add(model.ServerDef{
+		Name:      "github",
+		Transport: model.TransportStdio,
+		Command:   "npx",
+		Args:      []string{"-y", "@modelcontextprotocol/server-github"},
+		Env:       map[string]string{"GITHUB_TOKEN": "${GITHUB_TOKEN}"},
+	})
+	_ = reg.Servers.Add(model.ServerDef{
+		Name:        "qdrant",
+		Description: "Qdrant vector database",
+		Transport:   model.TransportHTTP,
+		URL:         "http://localhost:6333/mcp",
+	})
+	_ = reg.Servers.Add(model.ServerDef{
+		Name:      "slack",
+		Transport: model.TransportStdio,
+		Command:   "npx",
+		Args:      []string{"-y", "@modelcontextprotocol/server-slack"},
+	})
 
 	store := &project.Store{
 		Projects: map[string]model.Project{

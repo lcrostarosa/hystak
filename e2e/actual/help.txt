@@ -1,0 +1,216 @@
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> hystak --help
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+────────────────────────────────────────────────────────────────────────────────
+> hystak --help
+hystak manages MCP server configurations, skil
+ls, hooks, and permissions
+from a central registry, syncs them to client
+config files, and launches
+Claude Code with the selected profile.
+
+Run with no arguments to pick a profile intera
+ctively, or use subcommands
+for non-interactive workflows.
+
+Arguments after -- are forwarded to the claude
+ process.
+
+Usage:
+  hystak [-- claude-args...] [flags]
+  hystak [command]
+
+────────────────────────────────────────────────────────────────────────────────
+> hystak --help
+hystak manages MCP server configurations, skil
+ls, hooks, and permissions
+from a central registry, syncs them to client
+config files, and launches
+Claude Code with the selected profile.
+
+Run with no arguments to pick a profile intera
+ctively, or use subcommands
+for non-interactive workflows.
+
+Arguments after -- are forwarded to the claude
+ process.
+
+Usage:
+  hystak [-- claude-args...] [flags]
+  hystak [command]
+
+────────────────────────────────────────────────────────────────────────────────

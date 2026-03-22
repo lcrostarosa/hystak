@@ -125,11 +125,12 @@ func TestScanMCPs_Project(t *testing.T) {
 
 func newRegistry() *registry.Registry {
 	return &registry.Registry{
-		Servers:     make(map[string]model.ServerDef),
-		Skills:      make(map[string]model.SkillDef),
-		Hooks:       make(map[string]model.HookDef),
-		Permissions: make(map[string]model.PermissionRule),
-		Templates:   make(map[string]model.TemplateDef),
+		Servers:     registry.NewStore[model.ServerDef, *model.ServerDef]("server"),
+		Skills:      registry.NewStore[model.SkillDef, *model.SkillDef]("skill"),
+		Hooks:       registry.NewStore[model.HookDef, *model.HookDef]("hook"),
+		Permissions: registry.NewStore[model.PermissionRule, *model.PermissionRule]("permission"),
+		Templates:   registry.NewStore[model.TemplateDef, *model.TemplateDef]("template"),
+		Prompts:     registry.NewStore[model.PromptDef, *model.PromptDef]("prompt"),
 		Tags:        make(map[string][]string),
 	}
 }
@@ -140,7 +141,7 @@ func TestScanMCPs_Registry(t *testing.T) {
 	_ = os.MkdirAll(claudeHome, 0o755)
 
 	reg := newRegistry()
-	_ = reg.Add(model.ServerDef{
+	_ = reg.Servers.Add(model.ServerDef{
 		Name:      "registry-mcp",
 		Transport: model.TransportStdio,
 		Command:   "reg-cmd",
@@ -617,7 +618,7 @@ func TestScan_FullIntegration(t *testing.T) {
 
 	// Registry: one MCP
 	reg := newRegistry()
-	_ = reg.Add(model.ServerDef{Name: "registry-mcp", Transport: model.TransportStdio, Command: "rm"})
+	_ = reg.Servers.Add(model.ServerDef{Name: "registry-mcp", Transport: model.TransportStdio, Command: "rm"})
 
 	engine := NewEngine(claudeHome, reg)
 	items := engine.Scan(projectPath)
