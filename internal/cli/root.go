@@ -60,6 +60,11 @@ Arguments after -- are forwarded to the claude process.`,
 				return err
 			}
 
+			// Auto-discover MCPs from ~/.claude.json and project .mcp.json files.
+			if _, err := app.svc.DiscoverAndImport(); err != nil {
+				_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: auto-discover failed: %v\n", err)
+			}
+
 			// Load keybinding config.
 			keysPath := filepath.Join(cfgDir, "keys.yaml")
 			cfg, err := keyconfig.Load(keysPath)

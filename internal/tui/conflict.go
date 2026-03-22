@@ -9,6 +9,23 @@ import (
 	"github.com/lcrostarosa/hystak/internal/service"
 )
 
+// conflictDescriptions maps resource types to their conflict description renderers.
+// Adding a new resource type with conflicts only requires adding an entry here.
+var conflictDescriptions = map[string]func(name string) string{
+	"skill": func(name string) string {
+		return fmt.Sprintf("A skill named %s already exists in this project\nbut was NOT placed by hystak.\n", detailTitleStyle.Render(name))
+	},
+	"hook": func(_ string) string {
+		return "The \"hooks\" key already exists in settings.local.json\nbut was NOT placed by hystak.\n"
+	},
+	"permission": func(_ string) string {
+		return "The \"permissions\" key already exists in settings.local.json\nbut was NOT placed by hystak.\n"
+	},
+	"claude_md": func(_ string) string {
+		return "CLAUDE.md already exists in this project\nbut was NOT placed by hystak.\n"
+	},
+}
+
 // RequestConflictResolveMsg is sent when sync detects conflicts that need resolution.
 type RequestConflictResolveMsg struct {
 	ProjectName string
@@ -105,18 +122,10 @@ func (m ConflictModel) View() string {
 	b.WriteString(conflictTitleStyle.Render(title))
 	b.WriteString("\n\n")
 
-	switch c.ResourceType {
-	case "skill":
-		b.WriteString(fmt.Sprintf("A skill named %s already exists in this project\n", detailTitleStyle.Render(c.Name)))
-		b.WriteString("but was NOT placed by hystak.\n")
-	case "hook":
-		b.WriteString("The \"hooks\" key already exists in settings.local.json\n")
-		b.WriteString("but was NOT placed by hystak.\n")
-	case "permission":
-		b.WriteString("The \"permissions\" key already exists in settings.local.json\n")
-		b.WriteString("but was NOT placed by hystak.\n")
-	case "claude_md":
-		b.WriteString("CLAUDE.md already exists in this project\n")
+	if desc, ok := conflictDescriptions[c.ResourceType]; ok {
+		b.WriteString(desc(c.Name))
+	} else {
+		b.WriteString(fmt.Sprintf("Resource %q (%s) already exists\n", c.Name, c.ResourceType))
 		b.WriteString("but was NOT placed by hystak.\n")
 	}
 

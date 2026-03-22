@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/lcrostarosa/hystak/internal/backup"
+	"github.com/lcrostarosa/hystak/internal/config"
 	"github.com/lcrostarosa/hystak/internal/deploy"
 	"github.com/lcrostarosa/hystak/internal/discovery"
 	hysterr "github.com/lcrostarosa/hystak/internal/errors"
@@ -92,15 +93,14 @@ type effectiveConfig struct {
 
 // Service orchestrates registry, projects, and deployers.
 type Service struct {
-	registry         *registry.Registry
-	projects         *project.Store
-	deployers        map[model.ClientType]deploy.Deployer
-	skillsDeployer   *deploy.SkillsDeployer
-	settingsDeployer *deploy.SettingsDeployer
-	claudeMDDeployer *deploy.ClaudeMDDeployer
-	profiles         *profile.Manager
-	backups          *backup.Manager
-	configDir        string
+	registry          *registry.Registry
+	projects          *project.Store
+	deployers         map[model.ClientType]deploy.Deployer
+	resourceDeployers []deploy.ResourceDeployer
+	profiles          *profile.Manager
+	backups           *backup.Manager
+	configDir         string
+	userConfig        config.UserConfig
 }
 
 // New creates a Service by loading registry and projects from configDir.
@@ -127,16 +127,25 @@ func New(configDir string) (*Service, error) {
 		deployers[ct] = d
 	}
 
+	ucfg := config.LoadUserConfig()
+	bm := backup.NewManager(filepath.Join(configDir, "backups"))
+	if ucfg.MaxBackups > 0 {
+		bm.MaxBackups = ucfg.MaxBackups
+	}
+
 	return &Service{
-		registry:         reg,
-		projects:         proj,
-		deployers:        deployers,
-		skillsDeployer:   &deploy.SkillsDeployer{},
-		settingsDeployer: &deploy.SettingsDeployer{},
-		claudeMDDeployer: &deploy.ClaudeMDDeployer{},
-		profiles:         profile.NewManager(filepath.Join(configDir, "profiles")),
-		backups:          backup.NewManager(filepath.Join(configDir, "backups")),
-		configDir:        configDir,
+		registry:  reg,
+		projects:  proj,
+		deployers: deployers,
+		resourceDeployers: []deploy.ResourceDeployer{
+			&deploy.SkillsDeployer{},
+			&deploy.SettingsDeployer{},
+			&deploy.ClaudeMDDeployer{},
+		},
+		profiles:   profile.NewManager(filepath.Join(configDir, "profiles")),
+		backups:    bm,
+		configDir:  configDir,
+		userConfig: ucfg,
 	}, nil
 }
 
@@ -148,6 +157,85 @@ func (s *Service) saveRegistry() error {
 // saveProjects writes the project store back to disk.
 func (s *Service) saveProjects() error {
 	return s.projects.Save(filepath.Join(s.configDir, "projects.yaml"))
+}
+
+// UserConfig returns the loaded user configuration.
+func (s *Service) UserConfig() config.UserConfig {
+	return s.userConfig
+}
+
+// AutoSync discovers new MCPs from config files, imports them into the registry,
+// then syncs all projects. Backs up ~/.claude before any changes.
+// Returns nil results if auto_sync is disabled.
+func (s *Service) AutoSync() (map[string][]SyncResult, error) {
+	if !s.userConfig.AutoSync {
+		return nil, nil
+	}
+
+	if s.userConfig.BackupPolicy != "never" {
+		if _, err := s.backups.BackupClaudeHome(); err != nil {
+			return nil, fmt.Errorf("backing up claude home: %w", err)
+		}
+	}
+
+	// Discover and import MCPs from global + project configs before syncing.
+	if _, err := s.DiscoverAndImport(); err != nil {
+		return nil, fmt.Errorf("auto-discover: %w", err)
+	}
+
+	return s.SyncAll()
+}
+
+// DiscoverAndImport scans global ~/.claude.json and each project's .mcp.json
+// for MCP servers not yet in the registry, and imports them automatically.
+// Returns the number of newly imported servers.
+func (s *Service) DiscoverAndImport() (int, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return 0, nil // can't determine home, skip
+	}
+	return s.discoverAndImportFrom(filepath.Join(home, ".claude"))
+}
+
+// discoverAndImportFrom is the testable core of DiscoverAndImport.
+// claudeHome is the path to ~/.claude (used to locate ~/.claude.json).
+func (s *Service) discoverAndImportFrom(claudeHome string) (int, error) {
+	engine := discovery.NewEngine(claudeHome, nil) // nil registry = don't include registry items in scan
+
+	imported := 0
+
+	// Collect project paths for scanning.
+	var projectPaths []string
+	for _, proj := range s.projects.List() {
+		if proj.Path != "" {
+			projectPaths = append(projectPaths, proj.Path)
+		}
+	}
+
+	// Scan global + all project paths.
+	for _, projectPath := range append([]string{""}, projectPaths...) {
+		discovered := engine.ScanMCPs(projectPath)
+		for _, d := range discovered {
+			if d.Source == discovery.SourceRegistry {
+				continue // skip registry items
+			}
+			if _, exists := s.registry.Servers.Get(d.Name); exists {
+				continue // already in registry
+			}
+			if err := s.registry.Servers.Add(d.ServerDef); err != nil {
+				continue // duplicate from another scope, skip
+			}
+			imported++
+		}
+	}
+
+	if imported > 0 {
+		if err := s.saveRegistry(); err != nil {
+			return imported, fmt.Errorf("saving registry after import: %w", err)
+		}
+	}
+
+	return imported, nil
 }
 
 // Discover runs the discovery engine against a project path and returns discovered items.
@@ -501,19 +589,12 @@ func (s *Service) syncWithConfig(proj model.Project, cfg effectiveConfig) ([]Syn
 		return nil, fmt.Errorf("saving managed MCPs for project %q: %w", proj.Name, err)
 	}
 
-	// Sync skills.
-	if err := s.syncSkills(proj.Path, cfg.skills); err != nil {
-		return nil, fmt.Errorf("syncing skills for project %q: %w", proj.Name, err)
-	}
-
-	// Sync hooks and permissions to settings.local.json.
-	if err := s.syncSettings(proj.Path, cfg.hooks, cfg.permissions); err != nil {
-		return nil, fmt.Errorf("syncing settings for project %q: %w", proj.Name, err)
-	}
-
-	// Sync CLAUDE.md template and prompt fragments.
-	if err := s.syncClaudeMD(proj.Path, cfg.claudeMD, cfg.prompts); err != nil {
-		return nil, fmt.Errorf("syncing CLAUDE.md for project %q: %w", proj.Name, err)
+	// Sync non-MCP resources via unified deployer loop.
+	dcfg := s.buildDeployConfig(cfg)
+	for _, rd := range s.resourceDeployers {
+		if err := rd.Sync(proj.Path, dcfg); err != nil {
+			return nil, fmt.Errorf("syncing %s for project %q: %w", rd.Kind(), proj.Name, err)
+		}
 	}
 
 	sort.Slice(results, func(i, j int) bool {
@@ -523,90 +604,44 @@ func (s *Service) syncWithConfig(proj model.Project, cfg effectiveConfig) ([]Syn
 	return results, nil
 }
 
-// syncSkills resolves skill names from the registry and deploys skill files.
-func (s *Service) syncSkills(projectPath string, skillNames []string) error {
-	if s.skillsDeployer == nil {
-		return nil
-	}
-	if len(skillNames) == 0 {
-		if projectPath != "" {
-			// Clean up any previously managed skills.
-			return s.skillsDeployer.SyncSkills(projectPath, nil)
+// buildDeployConfig resolves names from the registry into concrete resource data
+// that deployers can consume directly.
+func (s *Service) buildDeployConfig(cfg effectiveConfig) deploy.DeployConfig {
+	skills := make([]model.SkillDef, 0, len(cfg.skills))
+	for _, name := range cfg.skills {
+		if skill, ok := s.registry.Skills.Get(name); ok {
+			skills = append(skills, skill)
 		}
-		return nil
 	}
 
-	skills := make([]model.SkillDef, 0, len(skillNames))
-	for _, name := range skillNames {
-		skill, ok := s.registry.Skills.Get(name)
-		if !ok {
-			// Not in registry — likely discovered from the filesystem
-			// and already deployed. Skip silently.
-			continue
+	hooks := make([]model.HookDef, 0, len(cfg.hooks))
+	for _, name := range cfg.hooks {
+		if hook, ok := s.registry.Hooks.Get(name); ok {
+			hooks = append(hooks, hook)
 		}
-		skills = append(skills, skill)
 	}
 
-	return s.skillsDeployer.SyncSkills(projectPath, skills)
-}
-
-// syncSettings resolves hooks and permissions from the registry and deploys to settings.local.json.
-func (s *Service) syncSettings(projectPath string, hookNames, permNames []string) error {
-	if s.settingsDeployer == nil {
-		return nil
-	}
-
-	if len(hookNames) == 0 && len(permNames) == 0 {
-		return nil
-	}
-
-	hooks := make([]model.HookDef, 0, len(hookNames))
-	for _, name := range hookNames {
-		hook, ok := s.registry.Hooks.Get(name)
-		if !ok {
-			// Not in registry — likely discovered from the filesystem
-			// and already deployed. Skip silently.
-			continue
+	permissions := make([]model.PermissionRule, 0, len(cfg.permissions))
+	for _, name := range cfg.permissions {
+		if perm, ok := s.registry.Permissions.Get(name); ok {
+			permissions = append(permissions, perm)
 		}
-		hooks = append(hooks, hook)
-	}
-
-	permissions := make([]model.PermissionRule, 0, len(permNames))
-	for _, name := range permNames {
-		perm, ok := s.registry.Permissions.Get(name)
-		if !ok {
-			// Not in registry — likely discovered from the filesystem
-			// and already deployed. Skip silently.
-			continue
-		}
-		permissions = append(permissions, perm)
-	}
-
-	return s.settingsDeployer.SyncSettings(projectPath, hooks, permissions)
-}
-
-// syncClaudeMD resolves the template and prompt fragments from the registry and deploys CLAUDE.md.
-func (s *Service) syncClaudeMD(projectPath string, templateName string, promptNames []string) error {
-	if s.claudeMDDeployer == nil {
-		return nil
 	}
 
 	var templateSource string
-	if templateName != "" {
-		tmpl, ok := s.registry.Templates.Get(templateName)
-		if !ok {
-			return hysterr.TemplateNotFound(templateName)
+	if cfg.claudeMD != "" {
+		if tmpl, ok := s.registry.Templates.Get(cfg.claudeMD); ok {
+			templateSource = tmpl.Source
 		}
-		templateSource = tmpl.Source
 	}
 
-	promptSources := s.resolvePromptSources(promptNames)
-
-	if templateSource == "" && len(promptSources) == 0 {
-		return nil
+	return deploy.DeployConfig{
+		Skills:         skills,
+		Hooks:          hooks,
+		Permissions:    permissions,
+		TemplateSource: templateSource,
+		PromptSources:  s.resolvePromptSources(cfg.prompts),
 	}
-
-	return s.claudeMDDeployer.SyncClaudeMD(projectPath, templateSource, promptSources)
 }
 
 // resolvePromptSources resolves prompt names to source file paths, sorted by (Order, Name)
@@ -717,53 +752,11 @@ func (s *Service) PreflightSync(projectName string) ([]SyncConflict, error) {
 		return nil, err
 	}
 
+	dcfg := s.buildDeployConfig(cfg)
 	var conflicts []SyncConflict
 
-	// Check skills.
-	if s.skillsDeployer != nil && len(cfg.skills) > 0 {
-		skills := make([]model.SkillDef, 0, len(cfg.skills))
-		for _, name := range cfg.skills {
-			if skill, ok := s.registry.Skills.Get(name); ok {
-				skills = append(skills, skill)
-			}
-		}
-		for _, c := range s.skillsDeployer.PreflightSkills(proj.Path, skills) {
-			conflicts = append(conflicts, SyncConflict{
-				ResourceType: c.ResourceType,
-				Name:         c.Name,
-				ExistingPath: c.ExistingPath,
-				Resolution:   ConflictPending,
-			})
-		}
-	}
-
-	// Check settings (hooks/permissions).
-	if s.settingsDeployer != nil {
-		hooks := make([]model.HookDef, 0, len(cfg.hooks))
-		for _, name := range cfg.hooks {
-			if hook, ok := s.registry.Hooks.Get(name); ok {
-				hooks = append(hooks, hook)
-			}
-		}
-		permissions := make([]model.PermissionRule, 0, len(cfg.permissions))
-		for _, name := range cfg.permissions {
-			if perm, ok := s.registry.Permissions.Get(name); ok {
-				permissions = append(permissions, perm)
-			}
-		}
-		for _, c := range s.settingsDeployer.PreflightSettings(proj.Path, hooks, permissions) {
-			conflicts = append(conflicts, SyncConflict{
-				ResourceType: c.ResourceType,
-				Name:         c.Name,
-				ExistingPath: c.ExistingPath,
-				Resolution:   ConflictPending,
-			})
-		}
-	}
-
-	// Check CLAUDE.md.
-	if s.claudeMDDeployer != nil && cfg.claudeMD != "" {
-		if c := s.claudeMDDeployer.PreflightClaudeMD(proj.Path); c != nil {
+	for _, rd := range s.resourceDeployers {
+		for _, c := range rd.Preflight(proj.Path, dcfg) {
 			conflicts = append(conflicts, SyncConflict{
 				ResourceType: c.ResourceType,
 				Name:         c.Name,

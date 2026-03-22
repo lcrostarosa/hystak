@@ -130,41 +130,24 @@ func (e *Engine) Scan(projectPath string) *Items {
 func (e *Engine) ScanMCPs(projectPath string) []DiscoveredMCP {
 	var results []DiscoveredMCP
 
-	// Global: ~/.claude.json → mcpServers
 	globalPath := filepath.Join(filepath.Dir(e.claudeHome), ".claude.json")
-	if mcps := readMCPsFromJSON(globalPath); mcps != nil {
-		for name, srv := range mcps {
-			results = append(results, DiscoveredMCP{
-				Name:      name,
-				ServerDef: srv,
-				Source:    SourceGlobal,
-			})
-		}
+
+	// Global: ~/.claude.json (top-level + project-scoped)
+	for name, srv := range readMCPs(globalPath, projectPath) {
+		results = append(results, DiscoveredMCP{Name: name, ServerDef: srv, Source: SourceGlobal})
 	}
 
-	// Project: <project>/.mcp.json → mcpServers
+	// Project: <project>/.mcp.json
 	if projectPath != "" {
-		projPath := filepath.Join(projectPath, ".mcp.json")
-		if mcps := readMCPsFromJSON(projPath); mcps != nil {
-			for name, srv := range mcps {
-				results = append(results, DiscoveredMCP{
-					Name:      name,
-					ServerDef: srv,
-					Source:    SourceProject,
-				})
-			}
+		for name, srv := range readMCPs(filepath.Join(projectPath, ".mcp.json"), "") {
+			results = append(results, DiscoveredMCP{Name: name, ServerDef: srv, Source: SourceProject})
 		}
 	}
 
-	// Registry: all servers from hystak registry
+	// Registry
 	if e.registry != nil {
 		for _, srv := range e.registry.Servers.List() {
-			results = append(results, DiscoveredMCP{
-				Name:      srv.Name,
-				ServerDef: srv,
-				Source:    SourceRegistry,
-				IsManaged: true,
-			})
+			results = append(results, DiscoveredMCP{Name: srv.Name, ServerDef: srv, Source: SourceRegistry, IsManaged: true})
 		}
 	}
 
@@ -299,8 +282,21 @@ func (e *Engine) ScanPrompts() []DiscoveredPrompt {
 
 // --- MCP helpers ---
 
-// readMCPsFromJSON reads mcpServers from a Claude Code JSON config file.
-func readMCPsFromJSON(path string) map[string]model.ServerDef {
+// ccServer is the JSON representation of an MCP server in Claude Code config files.
+type ccServer struct {
+	Type    string            `json:"type"`
+	Command string            `json:"command,omitempty"`
+	Args    []string          `json:"args,omitempty"`
+	Env     map[string]string `json:"env,omitempty"`
+	URL     string            `json:"url,omitempty"`
+	Headers map[string]string `json:"headers,omitempty"`
+}
+
+// readMCPs reads MCP servers from a Claude Code JSON config file.
+// It reads from the top-level mcpServers key, and if projectPath is non-empty,
+// also from projects[projectPath].mcpServers (Claude Code's per-project scope).
+// Results are merged; project-scoped entries win on name collision.
+func readMCPs(path, projectPath string) map[string]model.ServerDef {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil
@@ -311,37 +307,61 @@ func readMCPsFromJSON(path string) map[string]model.ServerDef {
 		return nil
 	}
 
-	serversRaw, ok := raw["mcpServers"]
+	result := parseMCPServers(raw["mcpServers"])
+
+	// Also check project-scoped servers inside the same file.
+	if projectPath != "" {
+		for name, srv := range parseScopedMCPServers(raw["projects"], projectPath) {
+			result[name] = srv
+		}
+	}
+
+	return result
+}
+
+// parseMCPServers unmarshals a raw mcpServers JSON value into ServerDefs.
+func parseMCPServers(raw json.RawMessage) map[string]model.ServerDef {
+	if raw == nil {
+		return make(map[string]model.ServerDef)
+	}
+
+	var servers map[string]ccServer
+	if err := json.Unmarshal(raw, &servers); err != nil {
+		return make(map[string]model.ServerDef)
+	}
+
+	result := make(map[string]model.ServerDef, len(servers))
+	for name, s := range servers {
+		result[name] = model.ServerDef{
+			Name:      name,
+			Transport: model.Transport(s.Type),
+			Command:   s.Command,
+			Args:      s.Args,
+			Env:       s.Env,
+			URL:       s.URL,
+			Headers:   s.Headers,
+		}
+	}
+	return result
+}
+
+// parseScopedMCPServers extracts mcpServers from a projects[path] entry.
+func parseScopedMCPServers(projectsRaw json.RawMessage, projectPath string) map[string]model.ServerDef {
+	if projectsRaw == nil {
+		return nil
+	}
+
+	var projects map[string]map[string]json.RawMessage
+	if err := json.Unmarshal(projectsRaw, &projects); err != nil {
+		return nil
+	}
+
+	proj, ok := projects[projectPath]
 	if !ok {
 		return nil
 	}
 
-	// Parse into the Claude Code server format.
-	var ccServers map[string]struct {
-		Type    string            `json:"type"`
-		Command string            `json:"command,omitempty"`
-		Args    []string          `json:"args,omitempty"`
-		Env     map[string]string `json:"env,omitempty"`
-		URL     string            `json:"url,omitempty"`
-		Headers map[string]string `json:"headers,omitempty"`
-	}
-	if err := json.Unmarshal(serversRaw, &ccServers); err != nil {
-		return nil
-	}
-
-	result := make(map[string]model.ServerDef, len(ccServers))
-	for name, ccs := range ccServers {
-		result[name] = model.ServerDef{
-			Name:      name,
-			Transport: model.Transport(ccs.Type),
-			Command:   ccs.Command,
-			Args:      ccs.Args,
-			Env:       ccs.Env,
-			URL:       ccs.URL,
-			Headers:   ccs.Headers,
-		}
-	}
-	return result
+	return parseMCPServers(proj["mcpServers"])
 }
 
 // --- Skills helpers ---

@@ -12,6 +12,16 @@ import (
 // SettingsDeployer writes hooks and permissions to .claude/settings.local.json.
 type SettingsDeployer struct{}
 
+func (d *SettingsDeployer) Kind() ResourceDeployerKind { return DeployerKindSettings }
+
+func (d *SettingsDeployer) Sync(projectPath string, config DeployConfig) error {
+	return d.SyncSettings(projectPath, config.Hooks, config.Permissions)
+}
+
+func (d *SettingsDeployer) Preflight(projectPath string, config DeployConfig) []PreflightConflict {
+	return d.PreflightSettings(projectPath, config.Hooks, config.Permissions)
+}
+
 // hookEntry represents a single hook in the Claude Code hooks format.
 type hookEntry struct {
 	Type    string `json:"type"`
@@ -120,6 +130,61 @@ func (d *SettingsDeployer) PreflightSettings(projectPath string, hooks []model.H
 	}
 
 	return conflicts
+}
+
+// ReadDeployed reads currently deployed hooks and permissions from settings.local.json.
+func (d *SettingsDeployer) ReadDeployed(projectPath string) (DeployConfig, error) {
+	settingsPath := filepath.Join(projectPath, ".claude", "settings.local.json")
+	data, err := os.ReadFile(settingsPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return DeployConfig{}, nil
+		}
+		return DeployConfig{}, fmt.Errorf("reading %s: %w", settingsPath, err)
+	}
+
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(data, &raw); err != nil {
+		return DeployConfig{}, nil
+	}
+
+	var cfg DeployConfig
+
+	// Parse hooks.
+	if hooksRaw, ok := raw["hooks"]; ok {
+		var hooksMap map[string][]hookMatcher
+		if err := json.Unmarshal(hooksRaw, &hooksMap); err == nil {
+			for event, matchers := range hooksMap {
+				for _, m := range matchers {
+					for _, h := range m.Hooks {
+						cfg.Hooks = append(cfg.Hooks, model.HookDef{
+							Event:   event,
+							Matcher: m.Matcher,
+							Command: h.Command,
+							Timeout: h.Timeout,
+						})
+					}
+				}
+			}
+		}
+	}
+
+	// Parse permissions.
+	if permsRaw, ok := raw["permissions"]; ok {
+		var permsMap map[string][]string
+		if err := json.Unmarshal(permsRaw, &permsMap); err == nil {
+			for typ, rules := range permsMap {
+				for _, rule := range rules {
+					cfg.Permissions = append(cfg.Permissions, model.PermissionRule{
+						Rule: rule,
+						Type: typ,
+					})
+				}
+			}
+		}
+	}
+
+	return cfg, nil
 }
 
 // buildHooksMap groups hooks by event and matcher into the Claude Code format.

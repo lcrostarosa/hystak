@@ -144,9 +144,11 @@ func setupService(t *testing.T) (*Service, *mockDeployer) {
 		registry:         reg,
 		projects:         store,
 		deployers:        map[model.ClientType]deploy.Deployer{model.ClientClaudeCode: mock},
-		skillsDeployer:   &deploy.SkillsDeployer{},
-		settingsDeployer: &deploy.SettingsDeployer{},
-		claudeMDDeployer: &deploy.ClaudeMDDeployer{},
+		resourceDeployers: []deploy.ResourceDeployer{
+			&deploy.SkillsDeployer{},
+			&deploy.SettingsDeployer{},
+			&deploy.ClaudeMDDeployer{},
+		},
 		profiles:         profile.NewManager(filepath.Join(configDir, "profiles")),
 		backups:          backup.NewManager(filepath.Join(configDir, "backups")),
 		configDir:        configDir,
@@ -757,9 +759,11 @@ func setupServiceWithConfig(t *testing.T) (*Service, *mockDeployer, string) {
 		registry:         reg,
 		projects:         store,
 		deployers:        map[model.ClientType]deploy.Deployer{model.ClientClaudeCode: mock},
-		skillsDeployer:   &deploy.SkillsDeployer{},
-		settingsDeployer: &deploy.SettingsDeployer{},
-		claudeMDDeployer: &deploy.ClaudeMDDeployer{},
+		resourceDeployers: []deploy.ResourceDeployer{
+			&deploy.SkillsDeployer{},
+			&deploy.SettingsDeployer{},
+			&deploy.ClaudeMDDeployer{},
+		},
 		profiles:         profile.NewManager(filepath.Join(configDir, "profiles")),
 		backups:          backup.NewManager(filepath.Join(configDir, "backups")),
 		configDir:        configDir,
@@ -1662,5 +1666,212 @@ func TestSyncProjectToPath_ProjectNotFound(t *testing.T) {
 	_, err := svc.SyncProjectToPath("nonexistent", "/tmp/alt")
 	if err == nil {
 		t.Fatal("expected error for nonexistent project")
+	}
+}
+
+// TestDiscoverAndImport_GlobalClaudeJSON simulates the scenario where a user
+// runs `claude mcp add playwright npx @playwright/mcp@latest` which writes to
+// ~/.claude.json, then opens hystak — the MCP should appear in the registry.
+func TestDiscoverAndImport_GlobalClaudeJSON(t *testing.T) {
+	// Set up a fake home dir with a .claude.json containing an MCP.
+	fakeHome := t.TempDir()
+	claudeJSON := filepath.Join(fakeHome, ".claude.json")
+	claudeHome := filepath.Join(fakeHome, ".claude")
+	_ = os.MkdirAll(claudeHome, 0o755)
+
+	mcpConfig := `{
+		"mcpServers": {
+			"playwright": {
+				"type": "stdio",
+				"command": "npx",
+				"args": ["@playwright/mcp@latest"]
+			}
+		}
+	}`
+	if err := os.WriteFile(claudeJSON, []byte(mcpConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a service with an empty registry.
+	configDir := t.TempDir()
+	reg := &registry.Registry{
+		Servers:     registry.NewStore[model.ServerDef, *model.ServerDef]("server"),
+		Skills:      registry.NewStore[model.SkillDef, *model.SkillDef]("skill"),
+		Hooks:       registry.NewStore[model.HookDef, *model.HookDef]("hook"),
+		Permissions: registry.NewStore[model.PermissionRule, *model.PermissionRule]("permission"),
+		Templates:   registry.NewStore[model.TemplateDef, *model.TemplateDef]("template"),
+		Prompts:     registry.NewStore[model.PromptDef, *model.PromptDef]("prompt"),
+		Tags:        make(map[string][]string),
+	}
+	if err := reg.Save(filepath.Join(configDir, "registry.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	store := &project.Store{Projects: make(map[string]model.Project)}
+	if err := store.Save(filepath.Join(configDir, "projects.yaml")); err != nil {
+		t.Fatal(err)
+	}
+
+	svc := &Service{
+		registry:          reg,
+		projects:          store,
+		deployers:         map[model.ClientType]deploy.Deployer{},
+		resourceDeployers: []deploy.ResourceDeployer{},
+		profiles:          profile.NewManager(filepath.Join(configDir, "profiles")),
+		backups:           backup.NewManager(filepath.Join(configDir, "backups")),
+		configDir:         configDir,
+	}
+
+	// Registry should be empty before discover.
+	if svc.registry.Servers.Len() != 0 {
+		t.Fatalf("expected empty registry, got %d servers", svc.registry.Servers.Len())
+	}
+
+	// Run discover against the fake home.
+	imported, err := svc.discoverAndImportFrom(claudeHome)
+	if err != nil {
+		t.Fatalf("discoverAndImportFrom: %v", err)
+	}
+
+	if imported != 1 {
+		t.Fatalf("expected 1 imported, got %d", imported)
+	}
+
+	// Verify the MCP is now in the registry.
+	srv, ok := svc.registry.Servers.Get("playwright")
+	if !ok {
+		t.Fatal("playwright not found in registry after import")
+	}
+	if srv.Command != "npx" {
+		t.Errorf("Command = %q, want npx", srv.Command)
+	}
+	if len(srv.Args) != 1 || srv.Args[0] != "@playwright/mcp@latest" {
+		t.Errorf("Args = %v", srv.Args)
+	}
+	if srv.Transport != model.TransportStdio {
+		t.Errorf("Transport = %q, want stdio", srv.Transport)
+	}
+}
+
+// TestDiscoverAndImport_ProjectMCPJSON tests that MCPs in a project's .mcp.json
+// are also discovered and imported.
+func TestDiscoverAndImport_ProjectMCPJSON(t *testing.T) {
+	fakeHome := t.TempDir()
+	claudeHome := filepath.Join(fakeHome, ".claude")
+	_ = os.MkdirAll(claudeHome, 0o755)
+
+	// Create a project dir with .mcp.json.
+	projectDir := t.TempDir()
+	mcpJSON := `{
+		"mcpServers": {
+			"my-tool": {
+				"type": "stdio",
+				"command": "my-tool-bin"
+			}
+		}
+	}`
+	if err := os.WriteFile(filepath.Join(projectDir, ".mcp.json"), []byte(mcpJSON), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	configDir := t.TempDir()
+	reg := &registry.Registry{
+		Servers:     registry.NewStore[model.ServerDef, *model.ServerDef]("server"),
+		Skills:      registry.NewStore[model.SkillDef, *model.SkillDef]("skill"),
+		Hooks:       registry.NewStore[model.HookDef, *model.HookDef]("hook"),
+		Permissions: registry.NewStore[model.PermissionRule, *model.PermissionRule]("permission"),
+		Templates:   registry.NewStore[model.TemplateDef, *model.TemplateDef]("template"),
+		Prompts:     registry.NewStore[model.PromptDef, *model.PromptDef]("prompt"),
+		Tags:        make(map[string][]string),
+	}
+	_ = reg.Save(filepath.Join(configDir, "registry.yaml"))
+
+	store := &project.Store{
+		Projects: map[string]model.Project{
+			"testproj": {
+				Name:    "testproj",
+				Path:    projectDir,
+				Clients: []model.ClientType{model.ClientClaudeCode},
+			},
+		},
+	}
+	_ = store.Save(filepath.Join(configDir, "projects.yaml"))
+
+	svc := &Service{
+		registry:          reg,
+		projects:          store,
+		deployers:         map[model.ClientType]deploy.Deployer{},
+		resourceDeployers: []deploy.ResourceDeployer{},
+		profiles:          profile.NewManager(filepath.Join(configDir, "profiles")),
+		backups:           backup.NewManager(filepath.Join(configDir, "backups")),
+		configDir:         configDir,
+	}
+
+	imported, err := svc.discoverAndImportFrom(claudeHome)
+	if err != nil {
+		t.Fatalf("discoverAndImportFrom: %v", err)
+	}
+
+	if imported != 1 {
+		t.Fatalf("expected 1 imported, got %d", imported)
+	}
+
+	if _, ok := svc.registry.Servers.Get("my-tool"); !ok {
+		t.Fatal("my-tool not found in registry after import")
+	}
+}
+
+// TestDiscoverAndImport_SkipsDuplicates verifies that MCPs already in the
+// registry are not re-imported.
+func TestDiscoverAndImport_SkipsDuplicates(t *testing.T) {
+	fakeHome := t.TempDir()
+	claudeHome := filepath.Join(fakeHome, ".claude")
+	_ = os.MkdirAll(claudeHome, 0o755)
+
+	// Write an MCP to global config.
+	mcpConfig := `{"mcpServers": {"existing": {"type": "stdio", "command": "existing-cmd"}}}`
+	if err := os.WriteFile(filepath.Join(fakeHome, ".claude.json"), []byte(mcpConfig), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	configDir := t.TempDir()
+	reg := &registry.Registry{
+		Servers:     registry.NewStore[model.ServerDef, *model.ServerDef]("server"),
+		Skills:      registry.NewStore[model.SkillDef, *model.SkillDef]("skill"),
+		Hooks:       registry.NewStore[model.HookDef, *model.HookDef]("hook"),
+		Permissions: registry.NewStore[model.PermissionRule, *model.PermissionRule]("permission"),
+		Templates:   registry.NewStore[model.TemplateDef, *model.TemplateDef]("template"),
+		Prompts:     registry.NewStore[model.PromptDef, *model.PromptDef]("prompt"),
+		Tags:        make(map[string][]string),
+	}
+	// Pre-add the server to registry.
+	_ = reg.Servers.Add(model.ServerDef{Name: "existing", Transport: "stdio", Command: "old-cmd"})
+	_ = reg.Save(filepath.Join(configDir, "registry.yaml"))
+
+	store := &project.Store{Projects: make(map[string]model.Project)}
+	_ = store.Save(filepath.Join(configDir, "projects.yaml"))
+
+	svc := &Service{
+		registry:          reg,
+		projects:          store,
+		deployers:         map[model.ClientType]deploy.Deployer{},
+		resourceDeployers: []deploy.ResourceDeployer{},
+		profiles:          profile.NewManager(filepath.Join(configDir, "profiles")),
+		backups:           backup.NewManager(filepath.Join(configDir, "backups")),
+		configDir:         configDir,
+	}
+
+	imported, err := svc.discoverAndImportFrom(claudeHome)
+	if err != nil {
+		t.Fatalf("discoverAndImportFrom: %v", err)
+	}
+
+	if imported != 0 {
+		t.Fatalf("expected 0 imported (duplicate), got %d", imported)
+	}
+
+	// Verify original was NOT overwritten.
+	srv, _ := svc.registry.Servers.Get("existing")
+	if srv.Command != "old-cmd" {
+		t.Errorf("Command = %q, want old-cmd (should not overwrite)", srv.Command)
 	}
 }

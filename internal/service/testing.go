@@ -20,14 +20,16 @@ func NewForTest(
 	profiles *profile.Manager,
 ) *Service {
 	return &Service{
-		registry:         reg,
-		projects:         store,
-		deployers:        deployers,
-		skillsDeployer:   &deploy.SkillsDeployer{},
-		settingsDeployer: &deploy.SettingsDeployer{},
-		claudeMDDeployer: &deploy.ClaudeMDDeployer{},
-		profiles:         profiles,
-		backups:          backups,
-		configDir:        configDir,
+		registry:  reg,
+		projects:  store,
+		deployers: deployers,
+		resourceDeployers: []deploy.ResourceDeployer{
+			&deploy.SkillsDeployer{},
+			&deploy.SettingsDeployer{},
+			&deploy.ClaudeMDDeployer{},
+		},
+		profiles:  profiles,
+		backups:   backups,
+		configDir: configDir,
 	}
 }

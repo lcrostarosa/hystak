@@ -13,6 +13,16 @@ const legacyManagedSkillsMarker = ".hystak-managed"
 // SkillsDeployer syncs skill files to .claude/skills/<name>/SKILL.md using symlinks.
 type SkillsDeployer struct{}
 
+func (d *SkillsDeployer) Kind() ResourceDeployerKind { return DeployerKindSkill }
+
+func (d *SkillsDeployer) Sync(projectPath string, config DeployConfig) error {
+	return d.SyncSkills(projectPath, config.Skills)
+}
+
+func (d *SkillsDeployer) Preflight(projectPath string, config DeployConfig) []PreflightConflict {
+	return d.PreflightSkills(projectPath, config.Skills)
+}
+
 // SyncSkills creates symlinks for each skill and removes stale managed symlinks.
 // Unmanaged skill directories (containing regular files, not symlinks) are preserved.
 func (d *SkillsDeployer) SyncSkills(projectPath string, skills []model.SkillDef) error {
@@ -149,6 +159,44 @@ func (d *SkillsDeployer) PreflightSkills(projectPath string, skills []model.Skil
 		})
 	}
 	return conflicts
+}
+
+// ReadDeployed reads currently deployed skills from the project's .claude/skills/ directory.
+// Returns SkillDefs for symlinked (managed) skills with their source paths.
+func (d *SkillsDeployer) ReadDeployed(projectPath string) (DeployConfig, error) {
+	skillsDir := filepath.Join(projectPath, ".claude", "skills")
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return DeployConfig{}, nil
+		}
+		return DeployConfig{}, fmt.Errorf("reading skills directory: %w", err)
+	}
+
+	var skills []model.SkillDef
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		skillFile := filepath.Join(skillsDir, entry.Name(), "SKILL.md")
+		info, err := os.Lstat(skillFile)
+		if err != nil {
+			continue
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			continue // not managed
+		}
+		target, err := os.Readlink(skillFile)
+		if err != nil {
+			continue
+		}
+		skills = append(skills, model.SkillDef{
+			Name:   entry.Name(),
+			Source: target,
+		})
+	}
+
+	return DeployConfig{Skills: skills}, nil
 }
 
 // IsSkillManaged returns true if the skill at the given project path is managed

@@ -12,6 +12,19 @@ const legacyHystakSentinel = "<!-- managed by hystak -->"
 // ClaudeMDDeployer creates a symlink or composed file for CLAUDE.md in the project root.
 type ClaudeMDDeployer struct{}
 
+func (d *ClaudeMDDeployer) Kind() ResourceDeployerKind { return DeployerKindClaudeMD }
+
+func (d *ClaudeMDDeployer) Sync(projectPath string, config DeployConfig) error {
+	return d.SyncClaudeMD(projectPath, config.TemplateSource, config.PromptSources)
+}
+
+func (d *ClaudeMDDeployer) Preflight(projectPath string, config DeployConfig) []PreflightConflict {
+	if c := d.PreflightClaudeMD(projectPath); c != nil {
+		return []PreflightConflict{*c}
+	}
+	return nil
+}
+
 // PreflightClaudeMD checks if CLAUDE.md exists and is not managed by hystak.
 // Returns a conflict if CLAUDE.md is a regular file that hystak didn't place.
 func (d *ClaudeMDDeployer) PreflightClaudeMD(projectPath string) *PreflightConflict {
@@ -169,6 +182,36 @@ func (d *ClaudeMDDeployer) syncComposed(projectPath, templateSource string, prom
 	}
 
 	return nil
+}
+
+// ReadDeployed reads the current CLAUDE.md deployment state.
+// Returns the template source (symlink target) if managed, empty otherwise.
+func (d *ClaudeMDDeployer) ReadDeployed(projectPath string) (DeployConfig, error) {
+	target := filepath.Join(projectPath, "CLAUDE.md")
+
+	info, err := os.Lstat(target)
+	if err != nil {
+		return DeployConfig{}, nil // doesn't exist
+	}
+
+	if info.Mode()&os.ModeSymlink != 0 {
+		source, err := os.Readlink(target)
+		if err != nil {
+			return DeployConfig{}, nil
+		}
+		return DeployConfig{TemplateSource: source}, nil
+	}
+
+	// Check for managed composed file.
+	content, err := os.ReadFile(target)
+	if err != nil {
+		return DeployConfig{}, nil
+	}
+	if strings.HasPrefix(string(content), legacyHystakSentinel) {
+		return DeployConfig{TemplateSource: "(composed)"}, nil
+	}
+
+	return DeployConfig{}, nil // not managed
 }
 
 // IsClaudeMDManaged returns true if project/CLAUDE.md is managed by hystak

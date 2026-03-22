@@ -313,6 +313,34 @@ func pruneDir(dir string, max int) error {
 	return nil
 }
 
+// BackupClaudeHome backs up key Claude config files before destructive operations.
+// Files backed up: ~/.claude.json, ~/.claude/settings.json.
+// Returns the number of files backed up.
+func (m *Manager) BackupClaudeHome() (int, error) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return 0, nil // can't determine home, skip silently
+	}
+
+	files := []string{
+		filepath.Join(home, ".claude.json"),
+		filepath.Join(home, ".claude", "settings.json"),
+	}
+
+	backed := 0
+	for _, f := range files {
+		if _, err := os.Stat(f); os.IsNotExist(err) {
+			continue
+		}
+		if _, err := m.Create("claude-home", "", f); err != nil {
+			return backed, fmt.Errorf("backing up %s: %w", f, err)
+		}
+		backed++
+	}
+
+	return backed, nil
+}
+
 // copyFile copies src to dst, preserving permissions.
 func copyFile(src, dst string) error {
 	in, err := os.Open(src)
