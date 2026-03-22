@@ -16,7 +16,7 @@ func TestCreateBackup(t *testing.T) {
 
 	// Create a fake config file.
 	configPath := filepath.Join(dir, ".mcp.json")
-	os.WriteFile(configPath, []byte(`{"mcpServers":{}}`), 0o644)
+	_ = os.WriteFile(configPath, []byte(`{"mcpServers":{}}`), 0o644)
 
 	entry, err := m.Create(model.ClientClaudeCode, "/home/user/proj", configPath)
 	if err != nil {
@@ -53,7 +53,7 @@ func TestListOrdering(t *testing.T) {
 	m := NewManager(filepath.Join(dir, "backups"))
 	scope := "projects/home_user_proj"
 	backupDir := filepath.Join(dir, "backups", "claude-code", scope)
-	os.MkdirAll(backupDir, 0o755)
+	_ = os.MkdirAll(backupDir, 0o755)
 
 	// Create files with different timestamps.
 	names := []string{
@@ -62,7 +62,7 @@ func TestListOrdering(t *testing.T) {
 		"2026-03-18T11-00-00..mcp.json",
 	}
 	for _, name := range names {
-		os.WriteFile(filepath.Join(backupDir, name), []byte("{}"), 0o644)
+		_ = os.WriteFile(filepath.Join(backupDir, name), []byte("{}"), 0o644)
 	}
 
 	entries, err := m.List(model.ClientClaudeCode, "/home/user/proj")
@@ -100,7 +100,7 @@ func TestRestore(t *testing.T) {
 
 	// Create original config.
 	configPath := filepath.Join(dir, ".mcp.json")
-	os.WriteFile(configPath, []byte(`{"original":true}`), 0o644)
+	_ = os.WriteFile(configPath, []byte(`{"original":true}`), 0o644)
 
 	// Create a backup.
 	entry, err := m.Create(model.ClientClaudeCode, "/home/user/proj", configPath)
@@ -109,7 +109,7 @@ func TestRestore(t *testing.T) {
 	}
 
 	// Modify the config.
-	os.WriteFile(configPath, []byte(`{"modified":true}`), 0o644)
+	_ = os.WriteFile(configPath, []byte(`{"modified":true}`), 0o644)
 
 	// Restore.
 	if err := m.Restore(entry); err != nil {
@@ -130,7 +130,7 @@ func TestRestoreCreatesSafetyBackup(t *testing.T) {
 	m := NewManager(filepath.Join(dir, "backups"))
 
 	configPath := filepath.Join(dir, ".mcp.json")
-	os.WriteFile(configPath, []byte(`{"v1":true}`), 0o644)
+	_ = os.WriteFile(configPath, []byte(`{"v1":true}`), 0o644)
 
 	entry, err := m.Create(model.ClientClaudeCode, "/home/user/proj", configPath)
 	if err != nil {
@@ -138,7 +138,7 @@ func TestRestoreCreatesSafetyBackup(t *testing.T) {
 	}
 
 	// Modify config so the safety backup captures this version.
-	os.WriteFile(configPath, []byte(`{"v2":true}`), 0o644)
+	_ = os.WriteFile(configPath, []byte(`{"v2":true}`), 0o644)
 
 	if err := m.Restore(entry); err != nil {
 		t.Fatalf("Restore: %v", err)
@@ -167,13 +167,13 @@ func TestPrune(t *testing.T) {
 	m := NewManager(filepath.Join(dir, "backups"))
 	scope := "projects/home_user_proj"
 	backupDir := filepath.Join(dir, "backups", "claude-code", scope)
-	os.MkdirAll(backupDir, 0o755)
+	_ = os.MkdirAll(backupDir, 0o755)
 
 	// Create 5 backup files.
 	for i := 0; i < 5; i++ {
 		ts := time.Date(2026, 3, 18, 10+i, 0, 0, 0, time.UTC)
 		name := ts.Format("2006-01-02T15-04-05") + "..mcp.json"
-		os.WriteFile(filepath.Join(backupDir, name), []byte("{}"), 0o644)
+		_ = os.WriteFile(filepath.Join(backupDir, name), []byte("{}"), 0o644)
 	}
 
 	if err := m.Prune(3); err != nil {
@@ -234,8 +234,8 @@ func TestListAll(t *testing.T) {
 	// Create backups in two scopes.
 	for _, scope := range []string{"global", "projects/myproj"} {
 		d := filepath.Join(dir, "backups", "claude-code", scope)
-		os.MkdirAll(d, 0o755)
-		os.WriteFile(filepath.Join(d, "2026-03-18T10-00-00..mcp.json"), []byte("{}"), 0o644)
+		_ = os.MkdirAll(d, 0o755)
+		_ = os.WriteFile(filepath.Join(d, "2026-03-18T10-00-00..mcp.json"), []byte("{}"), 0o644)
 	}
 
 	entries, err := m.ListAll()

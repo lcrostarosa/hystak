@@ -80,8 +80,8 @@ Arguments after -- are forwarded to the client process.`,
 				}
 
 				if dryRun {
-					fmt.Fprintf(cmd.ErrOrStderr(), "Would run: %s %v\n", execName, extraArgs)
-					fmt.Fprintf(cmd.ErrOrStderr(), "Directory: %s\n", workDir)
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Would run: %s %v\n", execName, extraArgs)
+					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Directory: %s\n", workDir)
 					return nil
 				}
 
@@ -93,8 +93,8 @@ Arguments after -- are forwarded to the client process.`,
 				return launch.Exec(execPath, extraArgs, workDir)
 			}
 
-			// Default client: use shared helper.
-			return a.syncAndLaunch(cmd, proj, extraArgs, noSync, dryRun)
+			// Default client: use shared helper (explicit run = use project path).
+			return a.syncAndLaunch(cmd, proj, extraArgs, noSync, dryRun, false)
 		},
 	}
 

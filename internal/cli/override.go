@@ -50,7 +50,7 @@ func (a *cliApp) newOverrideCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Override set for %s in project %s.\n", serverName, projectName)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Override set for %s in project %s.\n", serverName, projectName)
 			return nil
 		},
 	}

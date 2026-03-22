@@ -17,10 +17,10 @@ func (a *cliApp) newDiffCmd() *cobra.Command {
 				return err
 			}
 			if diff == "" {
-				fmt.Fprintln(cmd.OutOrStdout(), "No drift detected.")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No drift detected.")
 				return nil
 			}
-			fmt.Fprint(cmd.OutOrStdout(), diff)
+			_, _ = fmt.Fprint(cmd.OutOrStdout(), diff)
 			return nil
 		},
 	}

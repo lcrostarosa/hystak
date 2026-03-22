@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -41,6 +42,7 @@ type MCPDeletedMsg struct{ Name string }
 type MCPsModel struct {
 	list       list.Model
 	service    *service.Service
+	keys       KeyMap
 	width      int
 	height     int
 	confirming bool
@@ -48,7 +50,7 @@ type MCPsModel struct {
 }
 
 // NewMCPsModel creates a new MCPsModel.
-func NewMCPsModel(svc *service.Service) MCPsModel {
+func NewMCPsModel(svc *service.Service, keys KeyMap) MCPsModel {
 	items := buildMCPItems(svc)
 	delegate := list.NewDefaultDelegate()
 	l := list.New(items, delegate, 0, 0)
@@ -61,6 +63,7 @@ func NewMCPsModel(svc *service.Service) MCPsModel {
 	return MCPsModel{
 		list:    l,
 		service: svc,
+		keys:    keys,
 	}
 }
 
@@ -115,7 +118,10 @@ func (m MCPsModel) StatusHelp() string {
 	if m.confirming {
 		return "y: confirm delete | n: cancel"
 	}
-	return "a: add | e: edit | d: delete | i: import | /: filter | tab: switch tabs | q: quit"
+	return fmt.Sprintf("%s: add | %s: edit | %s: delete | %s: import | /: filter | %s | q: quit",
+		m.keys.MCPAdd.Help().Key, m.keys.MCPEdit.Help().Key,
+		m.keys.MCPDelete.Help().Key, m.keys.MCPImport.Help().Key,
+		m.keys.tabNavHelp())
 }
 
 // Update handles messages for the MCPs tab.
@@ -147,21 +153,21 @@ func (m MCPsModel) Update(msg tea.Msg) (MCPsModel, tea.Cmd) {
 			break
 		}
 
-		switch msg.String() {
-		case "a":
+		switch {
+		case key.Matches(msg, m.keys.MCPAdd):
 			return m, func() tea.Msg { return RequestFormMsg{} }
-		case "e":
+		case key.Matches(msg, m.keys.MCPEdit):
 			if srv, ok := m.selectedMCP(); ok {
 				return m, func() tea.Msg { return RequestFormMsg{EditServer: &srv} }
 			}
 			return m, nil
-		case "d":
+		case key.Matches(msg, m.keys.MCPDelete):
 			if _, ok := m.selectedMCP(); ok {
 				m.confirming = true
 				m.err = nil
 			}
 			return m, nil
-		case "i":
+		case key.Matches(msg, m.keys.MCPImport):
 			return m, func() tea.Msg { return RequestImportMsg{} }
 		}
 	}

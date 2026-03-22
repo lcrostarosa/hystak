@@ -310,13 +310,13 @@ func TestClaudeMDDeployer_ComposesTemplateAndPrompts(t *testing.T) {
 
 	// Create template and prompt files.
 	templateFile := filepath.Join(sourceDir, "template.md")
-	os.WriteFile(templateFile, []byte("# Template Content"), 0o644)
+	_ = os.WriteFile(templateFile, []byte("# Template Content"), 0o644)
 
 	prompt1 := filepath.Join(sourceDir, "prompt1.md")
-	os.WriteFile(prompt1, []byte("## Prompt One"), 0o644)
+	_ = os.WriteFile(prompt1, []byte("## Prompt One"), 0o644)
 
 	prompt2 := filepath.Join(sourceDir, "prompt2.md")
-	os.WriteFile(prompt2, []byte("## Prompt Two"), 0o644)
+	_ = os.WriteFile(prompt2, []byte("## Prompt Two"), 0o644)
 
 	deployer := &ClaudeMDDeployer{}
 	if err := deployer.SyncClaudeMD(projectDir, templateFile, []string{prompt1, prompt2}); err != nil {
@@ -364,7 +364,7 @@ func TestClaudeMDDeployer_PromptsOnly(t *testing.T) {
 	sourceDir := t.TempDir()
 
 	prompt := filepath.Join(sourceDir, "guardrails.md")
-	os.WriteFile(prompt, []byte("# Safety First"), 0o644)
+	_ = os.WriteFile(prompt, []byte("# Safety First"), 0o644)
 
 	deployer := &ClaudeMDDeployer{}
 	if err := deployer.SyncClaudeMD(projectDir, "", []string{prompt}); err != nil {
@@ -387,10 +387,10 @@ func TestClaudeMDDeployer_SymlinkToComposed(t *testing.T) {
 	sourceDir := t.TempDir()
 
 	templateFile := filepath.Join(sourceDir, "template.md")
-	os.WriteFile(templateFile, []byte("# Template"), 0o644)
+	_ = os.WriteFile(templateFile, []byte("# Template"), 0o644)
 
 	prompt := filepath.Join(sourceDir, "prompt.md")
-	os.WriteFile(prompt, []byte("# Prompt"), 0o644)
+	_ = os.WriteFile(prompt, []byte("# Prompt"), 0o644)
 
 	deployer := &ClaudeMDDeployer{}
 
@@ -424,10 +424,10 @@ func TestClaudeMDDeployer_ComposedToSymlink(t *testing.T) {
 	sourceDir := t.TempDir()
 
 	templateFile := filepath.Join(sourceDir, "template.md")
-	os.WriteFile(templateFile, []byte("# Template"), 0o644)
+	_ = os.WriteFile(templateFile, []byte("# Template"), 0o644)
 
 	prompt := filepath.Join(sourceDir, "prompt.md")
-	os.WriteFile(prompt, []byte("# Prompt"), 0o644)
+	_ = os.WriteFile(prompt, []byte("# Prompt"), 0o644)
 
 	deployer := &ClaudeMDDeployer{}
 
@@ -460,10 +460,10 @@ func TestClaudeMDDeployer_SkipsUserContentWithPrompts(t *testing.T) {
 	// Create user-owned CLAUDE.md.
 	target := filepath.Join(projectDir, "CLAUDE.md")
 	userContent := "# User's CLAUDE.md"
-	os.WriteFile(target, []byte(userContent), 0o644)
+	_ = os.WriteFile(target, []byte(userContent), 0o644)
 
 	prompt := filepath.Join(sourceDir, "prompt.md")
-	os.WriteFile(prompt, []byte("# Prompt"), 0o644)
+	_ = os.WriteFile(prompt, []byte("# Prompt"), 0o644)
 
 	deployer := &ClaudeMDDeployer{}
 	if err := deployer.SyncClaudeMD(projectDir, "", []string{prompt}); err != nil {

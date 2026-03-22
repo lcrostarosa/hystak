@@ -6,6 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/lcrostarosa/hystak/internal/keyconfig"
 	"github.com/lcrostarosa/hystak/internal/model"
 	"github.com/lcrostarosa/hystak/internal/service"
 )
@@ -15,6 +16,7 @@ type Tab int
 
 const (
 	ProfilesTab Tab = iota
+	ToolsTab
 	MCPsTab
 	SkillsTab
 	HooksTab
@@ -43,7 +45,7 @@ const (
 	ModeLaunchWizard
 )
 
-var tabLabels = []string{"Profiles", "MCPs", "Skills", "Hooks", "Permissions", "Templates", "Prompts"}
+var tabLabels = []string{"Profiles", "Tools", "MCPs", "Skills", "Hooks", "Permissions", "Templates", "Prompts"}
 
 // overlay is the interface for full-screen overlay models.
 type overlay interface {
@@ -63,6 +65,7 @@ type AppModel struct {
 
 	mcps        MCPsModel
 	profiles    ProfilesModel
+	tools       ToolsModel
 	skills      SkillsModel
 	hooks       HooksModel
 	permissions PermissionsModel
@@ -81,26 +84,35 @@ type AppModel struct {
 	discovery      DiscoveryModel
 	launchWizard   LaunchWizardModel
 
-	launchProfile *model.Project
+	launchProfile       *model.Project
+	selectedProfileName string
+	selectedProfilePath string
 }
 
 // LaunchRequest returns the project to launch after the TUI exits, or nil.
 func (m AppModel) LaunchRequest() *model.Project { return m.launchProfile }
 
 // NewApp creates a new TUI application model.
-func NewApp(svc *service.Service) AppModel {
+func NewApp(svc *service.Service, resolved ...keyconfig.ResolvedKeys) AppModel {
+	var keys KeyMap
+	if len(resolved) > 0 {
+		keys = newKeyMap(resolved[0])
+	} else {
+		keys = newDefaultKeyMap()
+	}
 	return AppModel{
 		service:     svc,
 		activeTab:   ProfilesTab,
 		mode:        ModeBrowse,
-		keys:        newKeyMap(),
-		mcps:        NewMCPsModel(svc),
-		profiles:    NewProfilesModel(svc),
-		skills:      NewSkillsModel(svc),
-		hooks:       NewHooksModel(svc),
-		permissions: NewPermissionsModel(svc),
-		templates:   NewTemplatesModel(svc),
-		prompts:     NewPromptsModel(svc),
+		keys:        keys,
+		mcps:        NewMCPsModel(svc, keys),
+		profiles:    NewProfilesModel(svc, keys),
+		tools:       NewToolsModel(svc, keys),
+		skills:      NewSkillsModel(svc, keys),
+		hooks:       NewHooksModel(svc, keys),
+		permissions: NewPermissionsModel(svc, keys),
+		templates:   NewTemplatesModel(svc, keys),
+		prompts:     NewPromptsModel(svc, keys),
 	}
 }
 
@@ -209,6 +221,12 @@ func (m AppModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		var cmd tea.Cmd
 		m.profiles, cmd = m.profiles.Update(msg)
 		return m, cmd
+
+	case ProfileSelectionChangedMsg:
+		m.selectedProfileName = msg.ProfileName
+		m.selectedProfilePath = msg.ProjectPath
+		m.tools.SetProfile(msg.ProfileName, msg.ProjectPath)
+		return m, nil
 
 	case RequestLaunchMsg:
 		if proj, ok := m.service.GetProject(msg.ProfileName); ok {
@@ -525,6 +543,8 @@ func (m AppModel) activeTabConsuming() bool {
 	switch m.activeTab {
 	case ProfilesTab:
 		return m.profiles.IsConsuming()
+	case ToolsTab:
+		return m.tools.IsConsuming()
 	case MCPsTab:
 		return m.mcps.IsConsuming()
 	case SkillsTab:
@@ -547,6 +567,10 @@ func (m AppModel) updateActiveTab(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case ProfilesTab:
 		var cmd tea.Cmd
 		m.profiles, cmd = m.profiles.Update(msg)
+		return m, cmd
+	case ToolsTab:
+		var cmd tea.Cmd
+		m.tools, cmd = m.tools.Update(msg)
 		return m, cmd
 	case MCPsTab:
 		var cmd tea.Cmd
@@ -579,8 +603,9 @@ func (m AppModel) updateActiveTab(msg tea.Msg) (tea.Model, tea.Cmd) {
 // updateContentSize recalculates and propagates dimensions to sub-models.
 func (m *AppModel) updateContentSize() {
 	contentHeight := m.contentHeight()
-	m.mcps.SetSize(m.width, contentHeight)
 	m.profiles.SetSize(m.width, contentHeight)
+	m.tools.SetSize(m.width, contentHeight)
+	m.mcps.SetSize(m.width, contentHeight)
 	m.skills.SetSize(m.width, contentHeight)
 	m.hooks.SetSize(m.width, contentHeight)
 	m.permissions.SetSize(m.width, contentHeight)
@@ -613,6 +638,8 @@ func (m AppModel) View() string {
 	switch m.activeTab {
 	case ProfilesTab:
 		content = m.profiles.View()
+	case ToolsTab:
+		content = m.tools.View()
 	case MCPsTab:
 		content = m.mcps.View()
 	case SkillsTab:
@@ -664,6 +691,8 @@ func (m AppModel) renderStatusBar() string {
 	switch m.activeTab {
 	case ProfilesTab:
 		help = m.profiles.StatusHelp()
+	case ToolsTab:
+		help = m.tools.StatusHelp()
 	case MCPsTab:
 		help = m.mcps.StatusHelp()
 	case SkillsTab:
@@ -677,7 +706,7 @@ func (m AppModel) renderStatusBar() string {
 	case PromptsTab:
 		help = m.prompts.StatusHelp()
 	default:
-		help = "tab: switch tabs | q: quit"
+		help = m.keys.tabNavHelp() + " | q: quit"
 	}
 	return statusBarStyle.Render(help)
 }

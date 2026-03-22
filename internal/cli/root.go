@@ -3,10 +3,12 @@ package cli
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/mattn/go-isatty"
 	"github.com/lcrostarosa/hystak/internal/config"
+	"github.com/lcrostarosa/hystak/internal/keyconfig"
 	"github.com/lcrostarosa/hystak/internal/profile"
 	"github.com/lcrostarosa/hystak/internal/service"
 	"github.com/lcrostarosa/hystak/internal/tui"
@@ -17,6 +19,7 @@ import (
 type cliApp struct {
 	svc     *service.Service
 	version string
+	keyCfg  keyconfig.ResolvedKeys
 }
 
 // newRootCmd builds the full command tree.
@@ -32,7 +35,7 @@ func newRootCmd(version, commit, date string) *cobra.Command {
 from a central registry, syncs them to client config files, and launches
 Claude Code with the selected profile.
 
-Run with no arguments to pick a profile interactively, or use subcommands
+Run with no arguments to open the management TUI, or use subcommands
 for non-interactive workflows.
 
 Arguments after -- are forwarded to the claude process.`,
@@ -45,7 +48,7 @@ Arguments after -- are forwarded to the claude process.`,
 			if warning, err := config.Migrate(); err != nil {
 				return fmt.Errorf("config migration: %w", err)
 			} else if warning != "" {
-				fmt.Fprintln(cmd.ErrOrStderr(), warning)
+				_, _ = fmt.Fprintln(cmd.ErrOrStderr(), warning)
 			}
 
 			if err := config.EnsureConfigDir(); err != nil {
@@ -56,6 +59,18 @@ Arguments after -- are forwarded to the claude process.`,
 			if err != nil {
 				return err
 			}
+
+			// Load keybinding config.
+			keysPath := filepath.Join(cfgDir, "keys.yaml")
+			cfg, err := keyconfig.Load(keysPath)
+			if err != nil {
+				return fmt.Errorf("loading key config: %w", err)
+			}
+			app.keyCfg, err = keyconfig.Resolve(cfg)
+			if err != nil {
+				return fmt.Errorf("resolving key config: %w", err)
+			}
+
 			return nil
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -63,7 +78,6 @@ Arguments after -- are forwarded to the claude process.`,
 			var extraArgs []string
 			if dashAt := cmd.ArgsLenAtDash(); dashAt >= 0 {
 				extraArgs = args[dashAt:]
-				args = args[:dashAt]
 			}
 
 			if !isatty.IsTerminal(os.Stdout.Fd()) && !isatty.IsCygwinTerminal(os.Stdout.Fd()) {
@@ -84,44 +98,8 @@ Arguments after -- are forwarded to the claude process.`,
 				}
 			}
 
-			// Show picker.
-			picker := tui.NewPickerModel(app.svc, app.version)
-			p := tea.NewProgram(picker, tea.WithAltScreen())
-			result, err := p.Run()
-			if err != nil {
-				return err
-			}
-
-			pickerResult := result.(tui.PickerModel).Result()
-			if pickerResult == nil {
-				// User cancelled.
-				return nil
-			}
-
-			if pickerResult.Manage {
-				return app.runManageTUI(cmd, extraArgs)
-			}
-
-			// Configure mode: open wizard in hub mode (check before nil-project fallthrough).
-			if pickerResult.Configure && pickerResult.Project != nil {
-				proj := *pickerResult.Project
-				return app.runWizardAndLaunch(cmd, proj.Name, tui.LWModeHub, extraArgs)
-			}
-
-			if pickerResult.Project == nil {
-				// Launch without profile.
-				return launchBare(cmd, extraArgs)
-			}
-
-			proj := *pickerResult.Project
-
-			// First-time launch: walk through all steps sequentially.
-			// Returning project: open hub mode so user can review/change profile.
-			mode := tui.LWModeHub
-			if !app.svc.HasLaunched(proj.Name) {
-				mode = tui.LWModeSequential
-			}
-			return app.runWizardAndLaunch(cmd, proj.Name, mode, extraArgs)
+			// Boot directly into management TUI.
+			return app.runManageTUI(cmd, extraArgs)
 		},
 		SilenceUsage: true,
 	}
@@ -147,7 +125,7 @@ Arguments after -- are forwarded to the claude process.`,
 
 // runManageTUI launches the management TUI and handles a launch request if emitted.
 func (a *cliApp) runManageTUI(cmd *cobra.Command, extraArgs []string) error {
-	m := tui.NewApp(a.svc)
+	m := tui.NewApp(a.svc, a.keyCfg)
 	mp := tea.NewProgram(m, tea.WithAltScreen())
 	result, err := mp.Run()
 	if err != nil {
@@ -155,7 +133,7 @@ func (a *cliApp) runManageTUI(cmd *cobra.Command, extraArgs []string) error {
 	}
 	if app, ok := result.(tui.AppModel); ok {
 		if proj := app.LaunchRequest(); proj != nil {
-			return a.syncAndLaunch(cmd, *proj, extraArgs, false, false)
+			return a.syncAndLaunch(cmd, *proj, extraArgs, false, false, true)
 		}
 	}
 	return nil
@@ -224,14 +202,14 @@ func (a *cliApp) runWizardAndLaunch(cmd *cobra.Command, projectName string, mode
 	}
 
 	if !wr.launch {
-		fmt.Fprintln(cmd.OutOrStdout(), "Profile saved.")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Profile saved.")
 		return nil
 	}
 
 	// Sync and launch.
 	// Reload project since we just modified it.
 	proj, _ = a.svc.GetProject(projectName)
-	return a.syncAndLaunch(cmd, proj, extraArgs, false, false)
+	return a.syncAndLaunch(cmd, proj, extraArgs, false, false, false)
 }
 
 // wizardWrapper wraps LaunchWizardModel to implement tea.Model for standalone use.
@@ -251,9 +229,8 @@ func (w wizardWrapper) Init() tea.Cmd {
 }
 
 func (w wizardWrapper) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg.(type) {
+	switch complete := msg.(type) {
 	case tui.LaunchWizardCompleteMsg:
-		complete := msg.(tui.LaunchWizardCompleteMsg)
 		w.profile = complete.Profile
 		w.launch = complete.Launch
 		return w, tea.Quit

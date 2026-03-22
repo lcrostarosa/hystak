@@ -66,7 +66,7 @@ func testProjectService() *service.Service {
 }
 
 func TestNewProfilesModelNilService(t *testing.T) {
-	m := NewProfilesModel(nil)
+	m := NewProfilesModel(nil, newDefaultKeyMap())
 	if m.list.FilterState() != 0 {
 		t.Error("expected initial filter state to be unfiltered")
 	}
@@ -74,7 +74,7 @@ func TestNewProfilesModelNilService(t *testing.T) {
 
 func TestNewProfilesModelPopulatesList(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 
 	items := m.list.Items()
 	if len(items) != 2 {
@@ -142,7 +142,7 @@ func TestProfileItemFilterValue(t *testing.T) {
 
 func TestProfileServerCount(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 
 	items := m.list.Items()
 	myproj := items[0].(profileItem)
@@ -159,7 +159,7 @@ func TestProfileServerCount(t *testing.T) {
 
 func TestSelectedProfile(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	proj, ok := m.selectedProfile()
@@ -172,7 +172,7 @@ func TestSelectedProfile(t *testing.T) {
 }
 
 func TestSelectedProfileEmpty(t *testing.T) {
-	m := NewProfilesModel(nil)
+	m := NewProfilesModel(nil, newDefaultKeyMap())
 	_, ok := m.selectedProfile()
 	if ok {
 		t.Error("expected no selected profile with nil service")
@@ -180,7 +180,7 @@ func TestSelectedProfileEmpty(t *testing.T) {
 }
 
 func TestProfilesSetSize(t *testing.T) {
-	m := NewProfilesModel(nil)
+	m := NewProfilesModel(nil, newDefaultKeyMap())
 	m.SetSize(100, 30)
 	if m.width != 100 {
 		t.Errorf("expected width 100, got %d", m.width)
@@ -191,7 +191,7 @@ func TestProfilesSetSize(t *testing.T) {
 }
 
 func TestProfilesIsConsuming(t *testing.T) {
-	m := NewProfilesModel(nil)
+	m := NewProfilesModel(nil, newDefaultKeyMap())
 	if m.IsConsuming() {
 		t.Error("expected IsConsuming to be false initially")
 	}
@@ -209,7 +209,7 @@ func TestProfilesIsConsuming(t *testing.T) {
 }
 
 func TestProfilesStatusHelp(t *testing.T) {
-	m := NewProfilesModel(nil)
+	m := NewProfilesModel(nil, newDefaultKeyMap())
 	help := m.StatusHelp()
 	if !strings.Contains(help, "d: delete") {
 		t.Errorf("expected 'd: delete' in help, got %q", help)
@@ -231,7 +231,7 @@ func TestProfilesStatusHelp(t *testing.T) {
 
 func TestProfileDeleteConfirmation(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	// Press 'd' to start delete confirmation.
@@ -249,7 +249,7 @@ func TestProfileDeleteConfirmation(t *testing.T) {
 
 func TestProfileDeleteExecute(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune{'d'}}))
@@ -270,7 +270,7 @@ func TestProfileDeleteExecute(t *testing.T) {
 
 func TestFocusSwitchToRight(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	if m.focus != focusLeft {
@@ -278,7 +278,7 @@ func TestFocusSwitchToRight(t *testing.T) {
 	}
 
 	// Press 'enter' to focus right pane.
-	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyEnter}))
+	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune{'c'}}))
 	if m.focus != focusRight {
 		t.Error("expected focus on right pane after enter")
 	}
@@ -293,11 +293,11 @@ func TestFocusSwitchToRight(t *testing.T) {
 
 func TestFocusSwitchBackToLeft(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	// Enter right pane, then escape back.
-	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyEnter}))
+	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune{'c'}}))
 	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyEsc}))
 	if m.focus != focusLeft {
 		t.Error("expected focus on left pane after esc")
@@ -306,11 +306,11 @@ func TestFocusSwitchBackToLeft(t *testing.T) {
 
 func TestRightPaneNavigation(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	// Enter right pane.
-	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyEnter}))
+	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune{'c'}}))
 
 	// Should have 3 servers: github, qdrant, slack (sorted).
 	if len(m.allMCPs) != 3 {
@@ -344,11 +344,11 @@ func TestRightPaneNavigation(t *testing.T) {
 
 func TestSectionNavigation(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	// Enter right pane — starts at MCPs section.
-	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyEnter}))
+	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune{'c'}}))
 	if m.activeSection != sectionMCPs {
 		t.Fatalf("expected activeSection=sectionMCPs initially, got %d", m.activeSection)
 	}
@@ -374,12 +374,12 @@ func TestSectionNavigation(t *testing.T) {
 
 func TestServerToggleAssign(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	// Enter right pane. Servers are: github, qdrant, slack.
 	// github and qdrant are from tag "core", slack is direct MCP.
-	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyEnter}))
+	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune{'c'}}))
 
 	// Cursor on github (index 0). github is from tag — should error.
 	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune{' '}}))
@@ -393,11 +393,11 @@ func TestServerToggleAssign(t *testing.T) {
 
 func TestServerToggleUnassign(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	// Enter right pane. Navigate to "slack" (index 2).
-	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyEnter}))
+	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune{'c'}}))
 	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyDown})) // qdrant
 	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyDown})) // slack
 
@@ -418,11 +418,11 @@ func TestServerToggleUnassign(t *testing.T) {
 
 func TestServerToggleReassign(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	// Enter right pane. Navigate to "slack" (index 2).
-	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyEnter}))
+	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune{'c'}}))
 	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyDown}))
 	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyDown}))
 
@@ -448,7 +448,7 @@ func TestServerToggleReassign(t *testing.T) {
 
 func TestIsServerAssigned(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 
 	proj, _ := svc.GetProject("myproject")
 
@@ -464,7 +464,7 @@ func TestIsServerAssigned(t *testing.T) {
 
 func TestIsServerFromTag(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 
 	proj, _ := svc.GetProject("myproject")
 
@@ -478,7 +478,7 @@ func TestIsServerFromTag(t *testing.T) {
 
 func TestProfilesViewRendersDetail(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	view := m.View()
@@ -494,14 +494,14 @@ func TestProfilesViewRendersDetail(t *testing.T) {
 }
 
 func TestProfilesViewEmptyWithZeroSize(t *testing.T) {
-	m := NewProfilesModel(nil)
+	m := NewProfilesModel(nil, newDefaultKeyMap())
 	if view := m.View(); view != "" {
 		t.Errorf("expected empty string for zero-size view, got %q", view)
 	}
 }
 
 func TestProfilesRenderDetailNoSelection(t *testing.T) {
-	m := NewProfilesModel(nil)
+	m := NewProfilesModel(nil, newDefaultKeyMap())
 	detail := m.renderDetail(40, 20)
 	if !strings.Contains(detail, "No profile selected") {
 		t.Errorf("expected 'No profile selected', got:\n%s", detail)
@@ -510,7 +510,7 @@ func TestProfilesRenderDetailNoSelection(t *testing.T) {
 
 func TestProfilesRenderDetailShowsFields(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	detail := m.renderDetail(40, 20)
@@ -524,7 +524,7 @@ func TestProfilesRenderDetailShowsFields(t *testing.T) {
 
 func TestRenderDetailShowsCheckboxes(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	detail := m.renderDetail(40, 20)
@@ -543,11 +543,11 @@ func TestRenderDetailShowsCheckboxes(t *testing.T) {
 
 func TestRenderDetailCursorInRightPane(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	// Enter right pane.
-	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyEnter}))
+	m, _ = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune{'c'}}))
 
 	detail := m.renderDetail(40, 20)
 	// Cursor should be on first server (github).
@@ -582,11 +582,11 @@ func TestCountAssignedServers(t *testing.T) {
 
 func TestProfilesRefreshList(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	// Add a new project.
-	svc.AddProject(model.Project{
+	_ = svc.AddProject(model.Project{
 		Name: "newproject",
 		Path: "/tmp/newproject",
 	})
@@ -612,7 +612,7 @@ func TestBuildAllSkillNames(t *testing.T) {
 
 func TestAutoSyncResultMsg(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	// Send a successful AutoSyncResultMsg.
@@ -630,7 +630,7 @@ func TestAutoSyncResultMsg(t *testing.T) {
 
 func TestAutoSyncResultMsgError(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	// Send a failed AutoSyncResultMsg.
@@ -646,14 +646,14 @@ func TestAutoSyncResultMsgError(t *testing.T) {
 
 func TestLaunchKey(t *testing.T) {
 	svc := testProjectService()
-	m := NewProfilesModel(svc)
+	m := NewProfilesModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
-	// Press 'L' to launch.
+	// Press 'enter' to launch.
 	var cmd tea.Cmd
-	m, cmd = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune{'L'}}))
+	m, cmd = m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyEnter}))
 	if cmd == nil {
-		t.Fatal("expected a command from 'L' press")
+		t.Fatal("expected a command from enter press")
 	}
 	// Execute the cmd and check for RequestLaunchMsg.
 	result := cmd()

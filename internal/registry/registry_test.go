@@ -50,7 +50,7 @@ func TestLoadValidYAML(t *testing.T) {
 tags:
   core: [github]
 `
-	os.WriteFile(path, []byte(yaml), 0o644)
+	_ = os.WriteFile(path, []byte(yaml), 0o644)
 
 	r, err := Load(path)
 	if err != nil {
@@ -100,7 +100,7 @@ tags:
 func TestLoadEmptyFile(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "registry.yaml")
-	os.WriteFile(path, nil, 0o644)
+	_ = os.WriteFile(path, nil, 0o644)
 
 	r, err := Load(path)
 	if err != nil {
@@ -187,7 +187,7 @@ func TestAddSuccess(t *testing.T) {
 func TestAddDuplicate(t *testing.T) {
 	r := empty()
 	srv := testServer("github")
-	r.Add(srv)
+	_ = r.Add(srv)
 
 	err := r.Add(srv)
 	if err == nil {
@@ -197,7 +197,7 @@ func TestAddDuplicate(t *testing.T) {
 
 func TestUpdateSuccess(t *testing.T) {
 	r := empty()
-	r.Add(testServer("github"))
+	_ = r.Add(testServer("github"))
 
 	updated := testServer("github")
 	updated.Description = "Updated description"
@@ -221,7 +221,7 @@ func TestUpdateNotFound(t *testing.T) {
 
 func TestDeleteSuccess(t *testing.T) {
 	r := empty()
-	r.Add(testServer("github"))
+	_ = r.Add(testServer("github"))
 
 	if err := r.Delete("github"); err != nil {
 		t.Fatalf("Delete: %v", err)
@@ -242,7 +242,7 @@ func TestDeleteNotFound(t *testing.T) {
 
 func TestDeleteReferencedByTag(t *testing.T) {
 	r := empty()
-	r.Add(testServer("github"))
+	_ = r.Add(testServer("github"))
 	r.Tags["core"] = []string{"github"}
 
 	err := r.Delete("github")
@@ -253,9 +253,9 @@ func TestDeleteReferencedByTag(t *testing.T) {
 
 func TestList(t *testing.T) {
 	r := empty()
-	r.Add(testServer("zzz"))
-	r.Add(testServer("aaa"))
-	r.Add(testServer("mmm"))
+	_ = r.Add(testServer("zzz"))
+	_ = r.Add(testServer("aaa"))
+	_ = r.Add(testServer("mmm"))
 
 	list := r.List()
 	if len(list) != 3 {
@@ -268,8 +268,8 @@ func TestList(t *testing.T) {
 
 func TestExpandTagSuccess(t *testing.T) {
 	r := empty()
-	r.Add(testServer("github"))
-	r.Add(testServer("filesystem"))
+	_ = r.Add(testServer("github"))
+	_ = r.Add(testServer("filesystem"))
 	r.Tags["core"] = []string{"github", "filesystem"}
 
 	names, err := r.ExpandTag("core")
@@ -311,7 +311,7 @@ func TestAddTagSuccess(t *testing.T) {
 
 func TestAddTagDuplicate(t *testing.T) {
 	r := empty()
-	r.AddTag("core", []string{"github"})
+	_ = r.AddTag("core", []string{"github"})
 	err := r.AddTag("core", []string{"github"})
 	if err == nil {
 		t.Fatal("expected duplicate tag error")
@@ -320,7 +320,7 @@ func TestAddTagDuplicate(t *testing.T) {
 
 func TestRemoveTagSuccess(t *testing.T) {
 	r := empty()
-	r.AddTag("core", []string{"github"})
+	_ = r.AddTag("core", []string{"github"})
 
 	if err := r.RemoveTag("core"); err != nil {
 		t.Fatalf("RemoveTag: %v", err)
@@ -340,7 +340,7 @@ func TestRemoveTagNotFound(t *testing.T) {
 
 func TestUpdateTagSuccess(t *testing.T) {
 	r := empty()
-	r.AddTag("core", []string{"github"})
+	_ = r.AddTag("core", []string{"github"})
 
 	if err := r.UpdateTag("core", []string{"github", "filesystem"}); err != nil {
 		t.Fatalf("UpdateTag: %v", err)
@@ -394,7 +394,7 @@ func TestAddSkill(t *testing.T) {
 func TestAddSkillDuplicate(t *testing.T) {
 	r := empty()
 	skill := testSkill("code-review")
-	r.AddSkill(skill)
+	_ = r.AddSkill(skill)
 
 	err := r.AddSkill(skill)
 	if err == nil {
@@ -412,7 +412,7 @@ func TestGetSkill(t *testing.T) {
 		{
 			name: "existing skill",
 			setup: func(r *Registry) {
-				r.AddSkill(testSkill("code-review"))
+				_ = r.AddSkill(testSkill("code-review"))
 			},
 			query:     "code-review",
 			wantFound: true,
@@ -440,9 +440,9 @@ func TestGetSkill(t *testing.T) {
 
 func TestListSkills(t *testing.T) {
 	r := empty()
-	r.AddSkill(testSkill("zzz-skill"))
-	r.AddSkill(testSkill("aaa-skill"))
-	r.AddSkill(testSkill("mmm-skill"))
+	_ = r.AddSkill(testSkill("zzz-skill"))
+	_ = r.AddSkill(testSkill("aaa-skill"))
+	_ = r.AddSkill(testSkill("mmm-skill"))
 
 	list := r.ListSkills()
 	if len(list) != 3 {
@@ -455,7 +455,7 @@ func TestListSkills(t *testing.T) {
 
 func TestUpdateSkill(t *testing.T) {
 	r := empty()
-	r.AddSkill(testSkill("code-review"))
+	_ = r.AddSkill(testSkill("code-review"))
 
 	updated := model.SkillDef{
 		Description: "Updated description",
@@ -487,7 +487,7 @@ func TestUpdateSkillNotFound(t *testing.T) {
 
 func TestDeleteSkill(t *testing.T) {
 	r := empty()
-	r.AddSkill(testSkill("code-review"))
+	_ = r.AddSkill(testSkill("code-review"))
 
 	if err := r.DeleteSkill("code-review"); err != nil {
 		t.Fatalf("DeleteSkill: %v", err)
@@ -547,7 +547,7 @@ func TestAddHook(t *testing.T) {
 func TestAddHookDuplicate(t *testing.T) {
 	r := empty()
 	hook := testHook("lint-check")
-	r.AddHook(hook)
+	_ = r.AddHook(hook)
 
 	err := r.AddHook(hook)
 	if err == nil {
@@ -565,7 +565,7 @@ func TestGetHook(t *testing.T) {
 		{
 			name: "existing hook",
 			setup: func(r *Registry) {
-				r.AddHook(testHook("lint-check"))
+				_ = r.AddHook(testHook("lint-check"))
 			},
 			query:     "lint-check",
 			wantFound: true,
@@ -593,9 +593,9 @@ func TestGetHook(t *testing.T) {
 
 func TestListHooks(t *testing.T) {
 	r := empty()
-	r.AddHook(testHook("zzz-hook"))
-	r.AddHook(testHook("aaa-hook"))
-	r.AddHook(testHook("mmm-hook"))
+	_ = r.AddHook(testHook("zzz-hook"))
+	_ = r.AddHook(testHook("aaa-hook"))
+	_ = r.AddHook(testHook("mmm-hook"))
 
 	list := r.ListHooks()
 	if len(list) != 3 {
@@ -608,7 +608,7 @@ func TestListHooks(t *testing.T) {
 
 func TestUpdateHook(t *testing.T) {
 	r := empty()
-	r.AddHook(testHook("lint-check"))
+	_ = r.AddHook(testHook("lint-check"))
 
 	updated := model.HookDef{
 		Event:   "PostToolUse",
@@ -648,7 +648,7 @@ func TestUpdateHookNotFound(t *testing.T) {
 
 func TestDeleteHook(t *testing.T) {
 	r := empty()
-	r.AddHook(testHook("lint-check"))
+	_ = r.AddHook(testHook("lint-check"))
 
 	if err := r.DeleteHook("lint-check"); err != nil {
 		t.Fatalf("DeleteHook: %v", err)
@@ -703,7 +703,7 @@ func TestAddPermission(t *testing.T) {
 func TestAddPermissionDuplicate(t *testing.T) {
 	r := empty()
 	perm := testPermission("bash-all")
-	r.AddPermission(perm)
+	_ = r.AddPermission(perm)
 
 	err := r.AddPermission(perm)
 	if err == nil {
@@ -721,7 +721,7 @@ func TestGetPermission(t *testing.T) {
 		{
 			name: "existing permission",
 			setup: func(r *Registry) {
-				r.AddPermission(testPermission("bash-all"))
+				_ = r.AddPermission(testPermission("bash-all"))
 			},
 			query:     "bash-all",
 			wantFound: true,
@@ -749,9 +749,9 @@ func TestGetPermission(t *testing.T) {
 
 func TestListPermissions(t *testing.T) {
 	r := empty()
-	r.AddPermission(testPermission("zzz-perm"))
-	r.AddPermission(testPermission("aaa-perm"))
-	r.AddPermission(testPermission("mmm-perm"))
+	_ = r.AddPermission(testPermission("zzz-perm"))
+	_ = r.AddPermission(testPermission("aaa-perm"))
+	_ = r.AddPermission(testPermission("mmm-perm"))
 
 	list := r.ListPermissions()
 	if len(list) != 3 {
@@ -764,7 +764,7 @@ func TestListPermissions(t *testing.T) {
 
 func TestUpdatePermission(t *testing.T) {
 	r := empty()
-	r.AddPermission(testPermission("bash-all"))
+	_ = r.AddPermission(testPermission("bash-all"))
 
 	updated := model.PermissionRule{
 		Rule: "WebFetch(domain:example.com)",
@@ -796,7 +796,7 @@ func TestUpdatePermissionNotFound(t *testing.T) {
 
 func TestDeletePermission(t *testing.T) {
 	r := empty()
-	r.AddPermission(testPermission("bash-all"))
+	_ = r.AddPermission(testPermission("bash-all"))
 
 	if err := r.DeletePermission("bash-all"); err != nil {
 		t.Fatalf("DeletePermission: %v", err)
@@ -847,7 +847,7 @@ func TestAddTemplate(t *testing.T) {
 func TestAddTemplateDuplicate(t *testing.T) {
 	r := empty()
 	tmpl := testTemplate("golang-project")
-	r.AddTemplate(tmpl)
+	_ = r.AddTemplate(tmpl)
 
 	err := r.AddTemplate(tmpl)
 	if err == nil {
@@ -865,7 +865,7 @@ func TestGetTemplate(t *testing.T) {
 		{
 			name: "existing template",
 			setup: func(r *Registry) {
-				r.AddTemplate(testTemplate("golang-project"))
+				_ = r.AddTemplate(testTemplate("golang-project"))
 			},
 			query:     "golang-project",
 			wantFound: true,
@@ -893,9 +893,9 @@ func TestGetTemplate(t *testing.T) {
 
 func TestListTemplates(t *testing.T) {
 	r := empty()
-	r.AddTemplate(testTemplate("zzz-template"))
-	r.AddTemplate(testTemplate("aaa-template"))
-	r.AddTemplate(testTemplate("mmm-template"))
+	_ = r.AddTemplate(testTemplate("zzz-template"))
+	_ = r.AddTemplate(testTemplate("aaa-template"))
+	_ = r.AddTemplate(testTemplate("mmm-template"))
 
 	list := r.ListTemplates()
 	if len(list) != 3 {
@@ -908,7 +908,7 @@ func TestListTemplates(t *testing.T) {
 
 func TestUpdateTemplate(t *testing.T) {
 	r := empty()
-	r.AddTemplate(testTemplate("golang-project"))
+	_ = r.AddTemplate(testTemplate("golang-project"))
 
 	updated := model.TemplateDef{
 		Source: "/new/templates/updated.md",
@@ -936,7 +936,7 @@ func TestUpdateTemplateNotFound(t *testing.T) {
 
 func TestDeleteTemplate(t *testing.T) {
 	r := empty()
-	r.AddTemplate(testTemplate("golang-project"))
+	_ = r.AddTemplate(testTemplate("golang-project"))
 
 	if err := r.DeleteTemplate("golang-project"); err != nil {
 		t.Fatalf("DeleteTemplate: %v", err)
@@ -965,55 +965,55 @@ func TestLoadSaveRoundTripAllEntities(t *testing.T) {
 	r := empty()
 
 	// Servers
-	r.Add(testServer("github"))
-	r.Add(testHTTPServer("remote-api"))
+	_ = r.Add(testServer("github"))
+	_ = r.Add(testHTTPServer("remote-api"))
 
 	// Skills
-	r.AddSkill(model.SkillDef{
+	_ = r.AddSkill(model.SkillDef{
 		Name:        "code-review",
 		Description: "Reviews code changes",
 		Source:      "/skills/code-review.md",
 	})
-	r.AddSkill(model.SkillDef{
+	_ = r.AddSkill(model.SkillDef{
 		Name:        "refactor",
 		Description: "Refactors code",
 		Source:      "/skills/refactor.md",
 	})
 
 	// Hooks
-	r.AddHook(model.HookDef{
+	_ = r.AddHook(model.HookDef{
 		Name:    "pre-lint",
 		Event:   "PreToolUse",
 		Matcher: "Bash",
 		Command: "/usr/bin/lint",
 		Timeout: 3000,
 	})
-	r.AddHook(model.HookDef{
+	_ = r.AddHook(model.HookDef{
 		Name:    "post-test",
 		Event:   "PostToolUse",
 		Command: "/usr/bin/report",
 	})
 
 	// Permissions
-	r.AddPermission(model.PermissionRule{
+	_ = r.AddPermission(model.PermissionRule{
 		Name: "allow-bash",
 		Rule: "Bash(*)",
 		Type: "allow",
 	})
-	r.AddPermission(model.PermissionRule{
+	_ = r.AddPermission(model.PermissionRule{
 		Name: "deny-web",
 		Rule: "WebFetch(domain:evil.com)",
 		Type: "deny",
 	})
 
 	// Templates
-	r.AddTemplate(model.TemplateDef{
+	_ = r.AddTemplate(model.TemplateDef{
 		Name:   "go-project",
 		Source: "/templates/go-project.md",
 	})
 
 	// Prompts
-	r.AddPrompt(model.PromptDef{
+	_ = r.AddPrompt(model.PromptDef{
 		Name:        "defensive-security",
 		Description: "Defensive-only security guardrails",
 		Source:      "prompts/defensive-security.md",
@@ -1023,8 +1023,8 @@ func TestLoadSaveRoundTripAllEntities(t *testing.T) {
 	})
 
 	// Tags
-	r.AddTag("core", []string{"github"})
-	r.AddTag("all", []string{"github", "remote-api"})
+	_ = r.AddTag("core", []string{"github"})
+	_ = r.AddTag("all", []string{"github", "remote-api"})
 
 	// Save
 	if err := r.Save(path); err != nil {
@@ -1232,7 +1232,7 @@ func TestAddPrompt(t *testing.T) {
 
 func TestAddPromptDuplicate(t *testing.T) {
 	r := empty()
-	r.AddPrompt(testPrompt("my-prompt", 0))
+	_ = r.AddPrompt(testPrompt("my-prompt", 0))
 
 	err := r.AddPrompt(testPrompt("my-prompt", 0))
 	if err == nil {
@@ -1242,9 +1242,9 @@ func TestAddPromptDuplicate(t *testing.T) {
 
 func TestListPrompts_SortedByOrderThenName(t *testing.T) {
 	r := empty()
-	r.AddPrompt(testPrompt("zzz-prompt", 10))
-	r.AddPrompt(testPrompt("aaa-prompt", 20))
-	r.AddPrompt(testPrompt("bbb-prompt", 10))
+	_ = r.AddPrompt(testPrompt("zzz-prompt", 10))
+	_ = r.AddPrompt(testPrompt("aaa-prompt", 20))
+	_ = r.AddPrompt(testPrompt("bbb-prompt", 10))
 
 	list := r.ListPrompts()
 	if len(list) != 3 {
@@ -1263,7 +1263,7 @@ func TestListPrompts_SortedByOrderThenName(t *testing.T) {
 
 func TestUpdatePrompt(t *testing.T) {
 	r := empty()
-	r.AddPrompt(testPrompt("my-prompt", 10))
+	_ = r.AddPrompt(testPrompt("my-prompt", 10))
 
 	updated := model.PromptDef{
 		Description: "Updated description",
@@ -1296,7 +1296,7 @@ func TestUpdatePromptNotFound(t *testing.T) {
 
 func TestDeletePrompt(t *testing.T) {
 	r := empty()
-	r.AddPrompt(testPrompt("my-prompt", 0))
+	_ = r.AddPrompt(testPrompt("my-prompt", 0))
 
 	if err := r.DeletePrompt("my-prompt"); err != nil {
 		t.Fatalf("DeletePrompt: %v", err)

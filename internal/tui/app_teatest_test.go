@@ -35,16 +35,17 @@ func TestTeatest_TabNavigation(t *testing.T) {
 		return strings.Contains(string(bts), "myproject")
 	}, teatest.WithDuration(2*time.Second))
 
-	// Press tab to switch to MCPs.
-	tm.Send(tea.KeyMsg{Type: tea.KeyTab})
+	// Press right to switch to Tools, then right again to MCPs.
+	tm.Send(tea.KeyMsg{Type: tea.KeyRight})
+	tm.Send(tea.KeyMsg{Type: tea.KeyRight})
 
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
 		s := string(bts)
 		return strings.Contains(s, "github") && strings.Contains(s, "Transport:")
 	}, teatest.WithDuration(2*time.Second))
 
-	// Press tab again to switch to Skills.
-	tm.Send(tea.KeyMsg{Type: tea.KeyTab})
+	// Press right again to switch to Skills.
+	tm.Send(tea.KeyMsg{Type: tea.KeyRight})
 
 	// Skills tab should show "No skill selected" or similar.
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
@@ -69,8 +70,9 @@ func TestTeatest_MCPsTabContent(t *testing.T) {
 		return strings.Contains(string(bts), "myproject")
 	}, teatest.WithDuration(2*time.Second))
 
-	// Switch to MCPs tab.
-	tm.Send(tea.KeyMsg{Type: tea.KeyTab})
+	// Switch to MCPs tab (right twice: Profiles → Tools → MCPs).
+	tm.Send(tea.KeyMsg{Type: tea.KeyRight})
+	tm.Send(tea.KeyMsg{Type: tea.KeyRight})
 
 	// Wait for MCP detail pane with server info.
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
@@ -95,8 +97,9 @@ func TestTeatest_FormOverlay(t *testing.T) {
 		return strings.Contains(string(bts), "myproject")
 	}, teatest.WithDuration(2*time.Second))
 
-	// Switch to MCPs tab.
-	tm.Send(tea.KeyMsg{Type: tea.KeyTab})
+	// Switch to MCPs tab (right twice).
+	tm.Send(tea.KeyMsg{Type: tea.KeyRight})
+	tm.Send(tea.KeyMsg{Type: tea.KeyRight})
 	teatest.WaitFor(t, tm.Output(), func(bts []byte) bool {
 		return strings.Contains(string(bts), "github")
 	}, teatest.WithDuration(2*time.Second))

@@ -29,3 +29,8 @@ func RenderLogo(width int) string {
 	}
 	return logo
 }
+
+// logoHeight returns the number of lines consumed by the logo.
+func logoHeight() int {
+	return lipgloss.Height(RenderLogo(0))
+}

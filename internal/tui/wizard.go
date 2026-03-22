@@ -10,6 +10,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/lcrostarosa/hystak/internal/catalog"
+	"github.com/lcrostarosa/hystak/internal/config"
+	"github.com/lcrostarosa/hystak/internal/keyconfig"
 	"github.com/lcrostarosa/hystak/internal/model"
 	"github.com/lcrostarosa/hystak/internal/service"
 )
@@ -19,6 +21,7 @@ type wizardStep int
 
 const (
 	wizardWelcome wizardStep = iota
+	wizardKeybindingProfile
 	wizardScanResult
 	wizardCatalog
 	wizardProjectForm
@@ -73,6 +76,10 @@ type WizardModel struct {
 	focused      int  // 0 = name, 1 = path
 	nameModified bool // true once user manually edits the name
 
+	// Keybinding profile
+	keyProfileCursor int
+	keyProfiles      []string
+
 	// Outcome
 	completed     bool
 	importedCount int
@@ -111,6 +118,7 @@ func NewWizardModel(svc *service.Service) WizardModel {
 		catSelectedSk:  make([]bool, len(cat.Skills)),
 		catSelectedHk:  make([]bool, len(cat.Hooks)),
 		catSelectedPm:  make([]bool, len(cat.Permissions)),
+		keyProfiles:    keyconfig.PresetNames(),
 	}
 }
 
@@ -148,6 +156,8 @@ func (m WizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch m.step {
 		case wizardWelcome:
 			return m.updateWelcome(msg)
+		case wizardKeybindingProfile:
+			return m.updateKeybindingProfile(msg)
 		case wizardScanResult:
 			return m.updateScanResult(msg)
 		case wizardCatalog:
@@ -173,13 +183,42 @@ func (m WizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m WizardModel) updateWelcome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch msg.String() {
 	case "enter":
+		m.step = wizardKeybindingProfile
+		return m, nil
+	case "esc", "q":
+		return m, tea.Quit
+	}
+	return m, nil
+}
+
+func (m WizardModel) updateKeybindingProfile(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "up", "k":
+		if m.keyProfileCursor > 0 {
+			m.keyProfileCursor--
+		}
+		return m, nil
+	case "down", "j":
+		if m.keyProfileCursor < len(m.keyProfiles)-1 {
+			m.keyProfileCursor++
+		}
+		return m, nil
+	case "enter":
+		// Save the selected keybinding profile.
+		profileName := m.keyProfiles[m.keyProfileCursor]
+		cfg := keyconfig.Config{Profile: profileName}
+		keysPath := filepath.Join(config.ConfigDir(), "keys.yaml")
+		_ = keyconfig.Save(keysPath, cfg)
+
+		// Proceed to scan.
 		svc := m.service
 		return m, func() tea.Msg {
 			results := svc.ScanForConfigs()
 			return scanCompleteMsg{results: results}
 		}
-	case "esc", "q":
-		return m, tea.Quit
+	case "esc":
+		m.step = wizardWelcome
+		return m, nil
 	}
 	return m, nil
 }
@@ -424,6 +463,9 @@ func (m WizardModel) applySetup() (tea.Model, tea.Cmd) {
 
 	// 3. Create the project.
 	projPath := strings.TrimSpace(m.pathInput.Value())
+	if absPath, err := filepath.Abs(projPath); err == nil {
+		projPath = absPath
+	}
 	proj := model.Project{
 		Name:    m.projectName,
 		Path:    projPath,
@@ -472,6 +514,8 @@ func (m WizardModel) View() string {
 	switch m.step {
 	case wizardWelcome:
 		m.renderWelcome(&b)
+	case wizardKeybindingProfile:
+		m.renderKeybindingProfile(&b)
 	case wizardScanResult:
 		m.renderScanResult(&b)
 	case wizardCatalog:
@@ -505,6 +549,40 @@ func (m WizardModel) renderWelcome(b *strings.Builder) {
 	b.WriteString(formHintStyle.Render("enter: begin | esc: skip setup"))
 }
 
+func (m WizardModel) renderKeybindingProfile(b *strings.Builder) {
+	b.WriteString(formTitleStyle.Render("Choose Navigation Style"))
+	b.WriteString("\n\n")
+	b.WriteString("How would you like to navigate the TUI?\n\n")
+
+	descs := map[string]string{
+		keyconfig.ProfileArrows:  "Left/Right switch tabs, Up/Down navigate lists",
+		keyconfig.ProfileVim:     "h/l switch tabs, j/k navigate lists",
+		keyconfig.ProfileClassic: "Tab/Shift+Tab switch tabs, Up/Down/j/k navigate lists",
+	}
+
+	for i, name := range m.keyProfiles {
+		cursor := "  "
+		if i == m.keyProfileCursor {
+			cursor = "\u25b8 "
+		}
+		label := name
+		if name == keyconfig.ProfileArrows {
+			label += " (recommended)"
+		}
+		if i == m.keyProfileCursor {
+			b.WriteString(cursor + sectionActiveStyle.Render(label))
+		} else {
+			b.WriteString(cursor + label)
+		}
+		b.WriteString("\n")
+		b.WriteString("    " + formHintStyle.Render(descs[name]))
+		b.WriteString("\n")
+	}
+
+	b.WriteString("\n")
+	b.WriteString(formHintStyle.Render("enter: select | esc: back"))
+}
+
 func (m WizardModel) renderScanResult(b *strings.Builder) {
 	b.WriteString(formTitleStyle.Render("Import Existing Configs"))
 	b.WriteString("\n\n")
@@ -524,9 +602,9 @@ func (m WizardModel) renderScanResult(b *strings.Builder) {
 			if !m.scanSelected[idx] {
 				check = "[ ]"
 			}
-			b.WriteString(fmt.Sprintf("%s%s %s\n", cur, check, c.Name))
+			fmt.Fprintf(b, "%s%s %s\n", cur, check, c.Name)
 			detail := formatServerCompact(c.Server)
-			b.WriteString(fmt.Sprintf("       %s\n", formHintStyle.Render(detail)))
+			fmt.Fprintf(b, "       %s\n", formHintStyle.Render(detail))
 			idx++
 		}
 		b.WriteString("\n")
@@ -572,8 +650,8 @@ func (m WizardModel) renderCatalog(b *strings.Builder) {
 			if entry.Popular {
 				label += " *"
 			}
-			b.WriteString(fmt.Sprintf("%s%s %-28s %s\n", cur, check, label,
-				formHintStyle.Render(entry.Description)))
+			fmt.Fprintf(b, "%s%s %-28s %s\n", cur, check, label,
+				formHintStyle.Render(entry.Description))
 		}
 
 	case catSkills:
@@ -586,8 +664,8 @@ func (m WizardModel) renderCatalog(b *strings.Builder) {
 			if m.catSelectedSk[i] {
 				check = "[x]"
 			}
-			b.WriteString(fmt.Sprintf("%s%s %-28s %s\n", cur, check, entry.Name,
-				formHintStyle.Render(entry.Description)))
+			fmt.Fprintf(b, "%s%s %-28s %s\n", cur, check, entry.Name,
+				formHintStyle.Render(entry.Description))
 		}
 
 	case catHooks:
@@ -601,8 +679,8 @@ func (m WizardModel) renderCatalog(b *strings.Builder) {
 				check = "[x]"
 			}
 			desc := fmt.Sprintf("%s: %s", entry.Event, entry.Command)
-			b.WriteString(fmt.Sprintf("%s%s %-28s %s\n", cur, check, entry.Name,
-				formHintStyle.Render(desc)))
+			fmt.Fprintf(b, "%s%s %-28s %s\n", cur, check, entry.Name,
+				formHintStyle.Render(desc))
 		}
 
 	case catPermissions:
@@ -616,8 +694,8 @@ func (m WizardModel) renderCatalog(b *strings.Builder) {
 				check = "[x]"
 			}
 			desc := fmt.Sprintf("%s: %s", entry.EffectiveType(), entry.Rule)
-			b.WriteString(fmt.Sprintf("%s%s %-28s %s\n", cur, check, entry.Name,
-				formHintStyle.Render(desc)))
+			fmt.Fprintf(b, "%s%s %-28s %s\n", cur, check, entry.Name,
+				formHintStyle.Render(desc))
 		}
 	}
 
@@ -671,7 +749,7 @@ func (m WizardModel) renderSummary(b *strings.Builder) {
 		for i, c := range candidates {
 			names[i] = c.Name
 		}
-		b.WriteString(fmt.Sprintf("%s %d imported MCPs\n", formLabelStyle.Render("Import:"), len(candidates)))
+		fmt.Fprintf(b, "%s %d imported MCPs\n", formLabelStyle.Render("Import:"), len(candidates))
 		b.WriteString(formHintStyle.Render("  " + strings.Join(names, ", ")))
 		b.WriteString("\n\n")
 	}
@@ -679,38 +757,38 @@ func (m WizardModel) renderSummary(b *strings.Builder) {
 	// Catalog selections.
 	catMCPs, catSkills, catHooks, catPerms := m.catalogSelectionSummary()
 	if len(catMCPs) > 0 {
-		b.WriteString(fmt.Sprintf("%s %s\n", formLabelStyle.Render("Catalog MCPs:"), strings.Join(catMCPs, ", ")))
+		fmt.Fprintf(b, "%s %s\n", formLabelStyle.Render("Catalog MCPs:"), strings.Join(catMCPs, ", "))
 	}
 	if len(catSkills) > 0 {
-		b.WriteString(fmt.Sprintf("%s %s\n", formLabelStyle.Render("Catalog Skills:"), strings.Join(catSkills, ", ")))
+		fmt.Fprintf(b, "%s %s\n", formLabelStyle.Render("Catalog Skills:"), strings.Join(catSkills, ", "))
 	}
 	if len(catHooks) > 0 {
-		b.WriteString(fmt.Sprintf("%s %s\n", formLabelStyle.Render("Catalog Hooks:"), strings.Join(catHooks, ", ")))
+		fmt.Fprintf(b, "%s %s\n", formLabelStyle.Render("Catalog Hooks:"), strings.Join(catHooks, ", "))
 	}
 	if len(catPerms) > 0 {
-		b.WriteString(fmt.Sprintf("%s %s\n", formLabelStyle.Render("Catalog Perms:"), strings.Join(catPerms, ", ")))
+		fmt.Fprintf(b, "%s %s\n", formLabelStyle.Render("Catalog Perms:"), strings.Join(catPerms, ", "))
 	}
 	totalCatalog := len(catMCPs) + len(catSkills) + len(catHooks) + len(catPerms)
 	if totalCatalog > 0 || len(candidates) > 0 {
 		b.WriteString("\n")
 	}
 
-	b.WriteString(fmt.Sprintf("%s %s\n", formLabelStyle.Render("Profile:"), detailTitleStyle.Render(m.projectName)))
-	b.WriteString(fmt.Sprintf("  %s %s\n", formLabelStyle.Render("Path:"), m.pathInput.Value()))
-	b.WriteString(fmt.Sprintf("  %s claude-code\n", formLabelStyle.Render("Client:")))
+	fmt.Fprintf(b, "%s %s\n", formLabelStyle.Render("Profile:"), detailTitleStyle.Render(m.projectName))
+	fmt.Fprintf(b, "  %s %s\n", formLabelStyle.Render("Path:"), m.pathInput.Value())
+	fmt.Fprintf(b, "  %s claude-code\n", formLabelStyle.Render("Client:"))
 
 	totalMCPs := len(candidates) + len(catMCPs)
 	if totalMCPs > 0 {
-		b.WriteString(fmt.Sprintf("  %s %d servers\n", formLabelStyle.Render("MCPs:"), totalMCPs))
+		fmt.Fprintf(b, "  %s %d servers\n", formLabelStyle.Render("MCPs:"), totalMCPs)
 	}
 	if len(catSkills) > 0 {
-		b.WriteString(fmt.Sprintf("  %s %d\n", formLabelStyle.Render("Skills:"), len(catSkills)))
+		fmt.Fprintf(b, "  %s %d\n", formLabelStyle.Render("Skills:"), len(catSkills))
 	}
 	if len(catHooks) > 0 {
-		b.WriteString(fmt.Sprintf("  %s %d\n", formLabelStyle.Render("Hooks:"), len(catHooks)))
+		fmt.Fprintf(b, "  %s %d\n", formLabelStyle.Render("Hooks:"), len(catHooks))
 	}
 	if len(catPerms) > 0 {
-		b.WriteString(fmt.Sprintf("  %s %d\n", formLabelStyle.Render("Permissions:"), len(catPerms)))
+		fmt.Fprintf(b, "  %s %d\n", formLabelStyle.Render("Permissions:"), len(catPerms))
 	}
 
 	b.WriteString("\n")
@@ -725,12 +803,12 @@ func (m WizardModel) renderDone(b *strings.Builder) {
 	b.WriteString(formTitleStyle.Render("Setup Complete"))
 	b.WriteString("\n\n")
 	if m.importedCount > 0 {
-		b.WriteString(fmt.Sprintf("Imported %d MCPs from existing configs.\n", m.importedCount))
+		fmt.Fprintf(b, "Imported %d MCPs from existing configs.\n", m.importedCount)
 	}
 	if m.catalogCount > 0 {
-		b.WriteString(fmt.Sprintf("Installed %d items from catalog.\n", m.catalogCount))
+		fmt.Fprintf(b, "Installed %d items from catalog.\n", m.catalogCount)
 	}
-	b.WriteString(fmt.Sprintf("Created profile %s.\n", detailTitleStyle.Render(m.projectName)))
+	fmt.Fprintf(b, "Created profile %s.\n", detailTitleStyle.Render(m.projectName))
 	b.WriteString("\n")
 	b.WriteString(syncMsgStyle.Render("Your shelf is stocked. Run hystak to pick a profile and launch."))
 	b.WriteString("\n\n")

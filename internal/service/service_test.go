@@ -800,7 +800,7 @@ func TestBackupConfigs_NoConfigFile(t *testing.T) {
 	svc, _, projectDir := setupServiceWithConfig(t)
 
 	// Remove the config file.
-	os.Remove(filepath.Join(projectDir, ".mcp.json"))
+	_ = os.Remove(filepath.Join(projectDir, ".mcp.json"))
 
 	entries, err := svc.BackupConfigs("myproject")
 	if err != nil {
@@ -1131,7 +1131,7 @@ func TestSyncProject_AutoMigrate(t *testing.T) {
 	svc, mock := setupService(t)
 
 	// myproject has MCPs and tags but no active profile — should auto-migrate.
-	results, err := svc.SyncProject("myproject")
+	_, err := svc.SyncProject("myproject")
 	if err != nil {
 		t.Fatalf("SyncProject: %v", err)
 	}
@@ -1159,7 +1159,7 @@ func TestSyncProject_AutoMigrate(t *testing.T) {
 	}
 
 	// Second sync should use the profile and not re-migrate.
-	results, err = svc.SyncProject("myproject")
+	results, err := svc.SyncProject("myproject")
 	if err != nil {
 		t.Fatalf("second SyncProject: %v", err)
 	}

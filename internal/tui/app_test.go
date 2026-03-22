@@ -27,23 +27,23 @@ func TestTabSwitchingNext(t *testing.T) {
 		t.Fatalf("expected ProfilesTab initially, got %d", app.activeTab)
 	}
 
-	// Press tab to switch to MCPs.
-	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyTab}))
+	// Press right to switch to Tools.
+	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRight}))
 	app = m.(AppModel)
-	if app.activeTab != MCPsTab {
-		t.Errorf("expected MCPsTab after tab press, got %d", app.activeTab)
+	if app.activeTab != ToolsTab {
+		t.Errorf("expected ToolsTab after right press, got %d", app.activeTab)
 	}
 
-	// Press tab again to switch to Skills.
-	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyTab}))
+	// Press right again to switch to MCPs.
+	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRight}))
 	app = m.(AppModel)
-	if app.activeTab != SkillsTab {
-		t.Errorf("expected SkillsTab after second tab press, got %d", app.activeTab)
+	if app.activeTab != MCPsTab {
+		t.Errorf("expected MCPsTab after second right press, got %d", app.activeTab)
 	}
 
 	// Advance through all remaining tabs and verify wrap-around.
 	for i := 0; i < int(tabCount)-2; i++ {
-		m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyTab}))
+		m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRight}))
 		app = m.(AppModel)
 	}
 	if app.activeTab != ProfilesTab {
@@ -56,11 +56,11 @@ func TestTabSwitchingPrev(t *testing.T) {
 	m, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	app = m.(AppModel)
 
-	// Press shift+tab to go back (wraps to last tab: PromptsTab).
-	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyShiftTab}))
+	// Press left to go back (wraps to last tab: PromptsTab).
+	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyLeft}))
 	app = m.(AppModel)
 	if app.activeTab != PromptsTab {
-		t.Errorf("expected PromptsTab after shift+tab, got %d", app.activeTab)
+		t.Errorf("expected PromptsTab after left, got %d", app.activeTab)
 	}
 }
 
@@ -115,8 +115,10 @@ func TestViewMCPsTab(t *testing.T) {
 	m, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
 	app = m.(AppModel)
 
-	// Switch to MCPs tab.
-	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyTab}))
+	// Switch to MCPs tab (Profiles → Tools → MCPs).
+	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRight}))
+	app = m.(AppModel)
+	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRight}))
 	app = m.(AppModel)
 
 	view := app.View()

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -40,6 +41,7 @@ type SkillDeletedMsg struct{ Name string }
 type SkillsModel struct {
 	list       list.Model
 	service    *service.Service
+	keys       KeyMap
 	width      int
 	height     int
 	confirming bool
@@ -47,7 +49,7 @@ type SkillsModel struct {
 }
 
 // NewSkillsModel creates a new SkillsModel.
-func NewSkillsModel(svc *service.Service) SkillsModel {
+func NewSkillsModel(svc *service.Service, keys KeyMap) SkillsModel {
 	items := buildSkillItems(svc)
 	delegate := list.NewDefaultDelegate()
 	l := list.New(items, delegate, 0, 0)
@@ -60,6 +62,7 @@ func NewSkillsModel(svc *service.Service) SkillsModel {
 	return SkillsModel{
 		list:    l,
 		service: svc,
+		keys:    keys,
 	}
 }
 
@@ -113,7 +116,9 @@ func (m SkillsModel) StatusHelp() string {
 	if m.confirming {
 		return "y: confirm delete | n: cancel"
 	}
-	return "a: add | e: edit | d: delete | /: filter | tab: switch tabs | q: quit"
+	return fmt.Sprintf("%s: add | %s: edit | %s: delete | /: filter | %s | q: quit",
+		m.keys.ResourceAdd.Help().Key, m.keys.ResourceEdit.Help().Key,
+		m.keys.ResourceDelete.Help().Key, m.keys.tabNavHelp())
 }
 
 // Update handles messages for the Skills tab.
@@ -145,15 +150,15 @@ func (m SkillsModel) Update(msg tea.Msg) (SkillsModel, tea.Cmd) {
 			break
 		}
 
-		switch msg.String() {
-		case "a":
+		switch {
+		case key.Matches(msg, m.keys.ResourceAdd):
 			return m, func() tea.Msg { return RequestSkillFormMsg{} }
-		case "e":
+		case key.Matches(msg, m.keys.ResourceEdit):
 			if skill, ok := m.selectedSkill(); ok {
 				return m, func() tea.Msg { return RequestSkillFormMsg{EditSkill: &skill} }
 			}
 			return m, nil
-		case "d":
+		case key.Matches(msg, m.keys.ResourceDelete):
 			if _, ok := m.selectedSkill(); ok {
 				m.confirming = true
 				m.err = nil

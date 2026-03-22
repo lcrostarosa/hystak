@@ -22,15 +22,15 @@ func testDiffService(t *testing.T, registryServers map[string]model.ServerDef, d
 
 	dir := t.TempDir()
 	configDir := filepath.Join(dir, "config")
-	os.MkdirAll(configDir, 0o755)
+	_ = os.MkdirAll(configDir, 0o755)
 
 	projectDir := filepath.Join(dir, "project")
-	os.MkdirAll(projectDir, 0o755)
+	_ = os.MkdirAll(projectDir, 0o755)
 
 	// Write deployed .mcp.json.
 	mcpData := map[string]interface{}{"mcpServers": deployedServers}
 	data, _ := json.Marshal(mcpData)
-	os.WriteFile(filepath.Join(projectDir, ".mcp.json"), data, 0o644)
+	_ = os.WriteFile(filepath.Join(projectDir, ".mcp.json"), data, 0o644)
 
 	reg := &registry.Registry{
 		Servers: registryServers,

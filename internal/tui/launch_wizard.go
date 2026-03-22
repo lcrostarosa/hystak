@@ -100,9 +100,6 @@ type LaunchWizardModel struct {
 	envKeys    []string
 	envValues  []string
 	envCursor  int
-	envEditing bool // true when editing a value
-	envField   int  // 0 = key, 1 = value
-
 	// Isolation
 	isolationCursor int
 	isolation       profile.IsolationStrategy
@@ -843,9 +840,9 @@ func (m LaunchWizardModel) renderMultiSelect(b *strings.Builder, items []wizardI
 		if item.source != "" {
 			sourceTag = " " + formHintStyle.Render("("+item.source+")")
 		}
-		b.WriteString(fmt.Sprintf("%s%s %s%s\n", cur, check, item.name, sourceTag))
+		fmt.Fprintf(b, "%s%s %s%s\n", cur, check, item.name, sourceTag)
 		if item.desc != "" {
-			b.WriteString(fmt.Sprintf("       %s\n", formHintStyle.Render(item.desc)))
+			fmt.Fprintf(b, "       %s\n", formHintStyle.Render(item.desc))
 		}
 	}
 
@@ -855,7 +852,7 @@ func (m LaunchWizardModel) renderMultiSelect(b *strings.Builder, items []wizardI
 	}
 
 	selected := countSelected(selections)
-	b.WriteString(fmt.Sprintf("\n%s", formLabelStyle.Render(fmt.Sprintf("%d/%d selected", selected, len(items)))))
+	fmt.Fprintf(b, "\n%s", formLabelStyle.Render(fmt.Sprintf("%d/%d selected", selected, len(items))))
 }
 
 func (m LaunchWizardModel) renderClaudeMD(b *strings.Builder) {
@@ -869,7 +866,7 @@ func (m LaunchWizardModel) renderClaudeMD(b *strings.Builder) {
 		if i == m.claudeMDChoice {
 			radio = "(*)"
 		}
-		b.WriteString(fmt.Sprintf("%s%s %s\n", cur, radio, opt))
+		fmt.Fprintf(b, "%s%s %s\n", cur, radio, opt)
 	}
 }
 
@@ -889,11 +886,11 @@ func (m LaunchWizardModel) renderEnvVars(b *strings.Builder) {
 			if i < len(m.envValues) {
 				v = m.envValues[i]
 			}
-			b.WriteString(fmt.Sprintf("%s%s = %s\n", cur, formLabelStyle.Render(k), v))
+			fmt.Fprintf(b, "%s%s = %s\n", cur, formLabelStyle.Render(k), v)
 		}
 	}
 
-	b.WriteString(fmt.Sprintf("\n%s", formHintStyle.Render("ctrl+a: add | ctrl+d: delete")))
+	fmt.Fprintf(b, "\n%s", formHintStyle.Render("ctrl+a: add | ctrl+d: delete"))
 }
 
 func (m LaunchWizardModel) renderIsolation(b *strings.Builder) {
@@ -907,8 +904,8 @@ func (m LaunchWizardModel) renderIsolation(b *strings.Builder) {
 		if opt.strategy == m.isolation {
 			radio = "(*)"
 		}
-		b.WriteString(fmt.Sprintf("%s%s %s\n", cur, radio, detailTitleStyle.Render(opt.label)))
-		b.WriteString(fmt.Sprintf("       %s\n", formHintStyle.Render(opt.desc)))
+		fmt.Fprintf(b, "%s%s %s\n", cur, radio, detailTitleStyle.Render(opt.label))
+		fmt.Fprintf(b, "       %s\n", formHintStyle.Render(opt.desc))
 	}
 }
 

@@ -69,8 +69,8 @@ func (a *cliApp) newSyncCmd() *cobra.Command {
 
 func printSyncResults(cmd *cobra.Command, project string, results []service.SyncResult) {
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "Project: %s\n", project)
+	_, _ = fmt.Fprintf(out, "Project: %s\n", project)
 	for _, r := range results {
-		fmt.Fprintf(out, "  %-20s %s\n", r.ServerName, r.Action)
+		_, _ = fmt.Fprintf(out, "  %-20s %s\n", r.ServerName, r.Action)
 	}
 }

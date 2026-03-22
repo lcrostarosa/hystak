@@ -28,7 +28,7 @@ func (a *cliApp) newBackupCmd() *cobra.Command {
 			if all {
 				projects := a.svc.ListProjects()
 				if len(projects) == 0 {
-					fmt.Fprintln(cmd.OutOrStdout(), "No projects found.")
+					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No projects found.")
 					return nil
 				}
 				for _, proj := range projects {
@@ -37,12 +37,12 @@ func (a *cliApp) newBackupCmd() *cobra.Command {
 						return err
 					}
 					out := cmd.OutOrStdout()
-					fmt.Fprintf(out, "Project: %s\n", proj.Name)
+					_, _ = fmt.Fprintf(out, "Project: %s\n", proj.Name)
 					for _, e := range entries {
-						fmt.Fprintf(out, "  backed up → %s\n", e.BackupPath)
+						_, _ = fmt.Fprintf(out, "  backed up → %s\n", e.BackupPath)
 					}
 					if len(entries) == 0 {
-						fmt.Fprintln(out, "  no configs to back up")
+						_, _ = fmt.Fprintln(out, "  no configs to back up")
 					}
 				}
 				return nil
@@ -58,10 +58,10 @@ func (a *cliApp) newBackupCmd() *cobra.Command {
 			}
 			out := cmd.OutOrStdout()
 			for _, e := range entries {
-				fmt.Fprintf(out, "backed up → %s\n", e.BackupPath)
+				_, _ = fmt.Fprintf(out, "backed up → %s\n", e.BackupPath)
 			}
 			if len(entries) == 0 {
-				fmt.Fprintln(out, "no configs to back up")
+				_, _ = fmt.Fprintln(out, "no configs to back up")
 			}
 			return nil
 		},
@@ -82,7 +82,7 @@ func (a *cliApp) listBackups(cmd *cobra.Command, args []string) error {
 			return e
 		}
 		if len(entries) == 0 {
-			fmt.Fprintf(cmd.OutOrStdout(), "No backups for project %q.\n", args[0])
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No backups for project %q.\n", args[0])
 			return nil
 		}
 		printBackupTable(cmd, entries)
@@ -94,7 +94,7 @@ func (a *cliApp) listBackups(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	if len(entries) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No backups found.")
+		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No backups found.")
 		return nil
 	}
 	printBackupTable(cmd, entries)
@@ -103,7 +103,7 @@ func (a *cliApp) listBackups(cmd *cobra.Command, args []string) error {
 
 func printBackupTable(cmd *cobra.Command, entries []backup.BackupEntry) {
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "TIMESTAMP\tCLIENT\tSCOPE\tPATH")
+	_, _ = fmt.Fprintln(w, "TIMESTAMP\tCLIENT\tSCOPE\tPATH")
 
 	// Sort newest first.
 	sort.Slice(entries, func(i, j int) bool {
@@ -111,12 +111,12 @@ func printBackupTable(cmd *cobra.Command, entries []backup.BackupEntry) {
 	})
 
 	for _, e := range entries {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
+		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
 			e.Timestamp.Format("2006-01-02 15:04:05"),
 			e.ClientType,
 			e.Scope,
 			e.BackupPath,
 		)
 	}
-	w.Flush()
+	_ = w.Flush()
 }

@@ -9,12 +9,12 @@ Type "hystak --config-dir $HYSTAK_CONFIG_DIR manage"
 Enter
 Sleep 1500ms
 
-# Navigate through tabs
-Tab
+# Navigate through tabs (arrow keys)
+Right
 Sleep 500ms
-Tab
+Right
 Sleep 500ms
-Tab
+Right
 Sleep 500ms
 
 # Quit

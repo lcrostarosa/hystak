@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -37,6 +38,7 @@ type PermissionDeletedMsg struct{ Name string }
 type PermissionsModel struct {
 	list       list.Model
 	service    *service.Service
+	keys       KeyMap
 	width      int
 	height     int
 	confirming bool
@@ -44,7 +46,7 @@ type PermissionsModel struct {
 }
 
 // NewPermissionsModel creates a new PermissionsModel.
-func NewPermissionsModel(svc *service.Service) PermissionsModel {
+func NewPermissionsModel(svc *service.Service, keys KeyMap) PermissionsModel {
 	items := buildPermissionItems(svc)
 	delegate := list.NewDefaultDelegate()
 	l := list.New(items, delegate, 0, 0)
@@ -57,6 +59,7 @@ func NewPermissionsModel(svc *service.Service) PermissionsModel {
 	return PermissionsModel{
 		list:    l,
 		service: svc,
+		keys:    keys,
 	}
 }
 
@@ -110,7 +113,9 @@ func (m PermissionsModel) StatusHelp() string {
 	if m.confirming {
 		return "y: confirm delete | n: cancel"
 	}
-	return "a: add | e: edit | d: delete | /: filter | tab: switch tabs | q: quit"
+	return fmt.Sprintf("%s: add | %s: edit | %s: delete | /: filter | %s | q: quit",
+		m.keys.ResourceAdd.Help().Key, m.keys.ResourceEdit.Help().Key,
+		m.keys.ResourceDelete.Help().Key, m.keys.tabNavHelp())
 }
 
 // Update handles messages for the Permissions tab.
@@ -142,15 +147,15 @@ func (m PermissionsModel) Update(msg tea.Msg) (PermissionsModel, tea.Cmd) {
 			break
 		}
 
-		switch msg.String() {
-		case "a":
+		switch {
+		case key.Matches(msg, m.keys.ResourceAdd):
 			return m, func() tea.Msg { return RequestPermissionFormMsg{} }
-		case "e":
+		case key.Matches(msg, m.keys.ResourceEdit):
 			if perm, ok := m.selectedPermission(); ok {
 				return m, func() tea.Msg { return RequestPermissionFormMsg{EditPermission: &perm} }
 			}
 			return m, nil
-		case "d":
+		case key.Matches(msg, m.keys.ResourceDelete):
 			if _, ok := m.selectedPermission(); ok {
 				m.confirming = true
 				m.err = nil

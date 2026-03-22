@@ -5,6 +5,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -50,6 +51,7 @@ type RequestPromptFormMsg struct {
 type PromptsModel struct {
 	list       list.Model
 	service    *service.Service
+	keys       KeyMap
 	width      int
 	height     int
 	confirming bool
@@ -59,7 +61,7 @@ type PromptsModel struct {
 }
 
 // NewPromptsModel creates a new PromptsModel.
-func NewPromptsModel(svc *service.Service) PromptsModel {
+func NewPromptsModel(svc *service.Service, keys KeyMap) PromptsModel {
 	items := buildPromptItems(svc)
 	delegate := list.NewDefaultDelegate()
 	l := list.New(items, delegate, 0, 0)
@@ -72,6 +74,7 @@ func NewPromptsModel(svc *service.Service) PromptsModel {
 	return PromptsModel{
 		list:    l,
 		service: svc,
+		keys:    keys,
 	}
 }
 
@@ -127,7 +130,9 @@ func (m PromptsModel) StatusHelp() string {
 	if m.previewing {
 		return "esc: close preview"
 	}
-	return "a: add | e: edit | d: delete | v: preview | /: filter | tab: switch tabs | q: quit"
+	return fmt.Sprintf("%s: add | %s: edit | %s: delete | v: preview | /: filter | %s | q: quit",
+		m.keys.ResourceAdd.Help().Key, m.keys.ResourceEdit.Help().Key,
+		m.keys.ResourceDelete.Help().Key, m.keys.tabNavHelp())
 }
 
 // Update handles messages for the Prompts tab.
@@ -169,21 +174,21 @@ func (m PromptsModel) Update(msg tea.Msg) (PromptsModel, tea.Cmd) {
 			break
 		}
 
-		switch msg.String() {
-		case "a":
+		switch {
+		case key.Matches(msg, m.keys.ResourceAdd):
 			return m, func() tea.Msg { return RequestPromptFormMsg{} }
-		case "e":
+		case key.Matches(msg, m.keys.ResourceEdit):
 			if prompt, ok := m.selectedPrompt(); ok {
 				return m, func() tea.Msg { return RequestPromptFormMsg{EditPrompt: &prompt} }
 			}
 			return m, nil
-		case "d":
+		case key.Matches(msg, m.keys.ResourceDelete):
 			if _, ok := m.selectedPrompt(); ok {
 				m.confirming = true
 				m.err = nil
 			}
 			return m, nil
-		case "v":
+		case msg.String() == "v":
 			if prompt, ok := m.selectedPrompt(); ok {
 				content, err := os.ReadFile(prompt.Source)
 				if err != nil {

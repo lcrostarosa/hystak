@@ -28,7 +28,9 @@ const (
 // syncAndLaunch syncs a project's configs and launches the client with a
 // post-exit reconfiguration loop. When Claude exits, the user is prompted to
 // relaunch, reconfigure, or quit.
-func (a *cliApp) syncAndLaunch(cmd *cobra.Command, proj model.Project, extraArgs []string, noSync, dryRun bool) error {
+// When useCWD is true, the launch working directory is the current directory
+// (proj.Path is still used for config deployment).
+func (a *cliApp) syncAndLaunch(cmd *cobra.Command, proj model.Project, extraArgs []string, noSync, dryRun, useCWD bool) error {
 	// Determine client executable.
 	if len(proj.Clients) == 0 {
 		return fmt.Errorf("project %q has no clients configured", proj.Name)
@@ -39,11 +41,19 @@ func (a *cliApp) syncAndLaunch(cmd *cobra.Command, proj model.Project, extraArgs
 	}
 
 	// Determine working directory.
-	workDir := proj.Path
-	if workDir == "" || workDir == "~" {
+	var workDir string
+	if useCWD {
 		workDir, err = os.Getwd()
 		if err != nil {
 			return fmt.Errorf("getting current directory: %w", err)
+		}
+	} else {
+		workDir = proj.Path
+		if workDir == "" || workDir == "~" {
+			workDir, err = os.Getwd()
+			if err != nil {
+				return fmt.Errorf("getting current directory: %w", err)
+			}
 		}
 	}
 
@@ -92,12 +102,13 @@ func (a *cliApp) syncAndLaunch(cmd *cobra.Command, proj model.Project, extraArgs
 		if cmd != nil {
 			w = cmd.ErrOrStderr()
 		}
-		fmt.Fprintf(w, "Would run: %s %v\n", execName, extraArgs)
-		fmt.Fprintf(w, "Directory: %s\n", workDir)
-		if isoStrategy == profile.IsolationWorktree {
-			fmt.Fprintf(w, "Isolation: worktree at %s\n", workDir)
-		} else if isoStrategy == profile.IsolationLock {
-			fmt.Fprintf(w, "Isolation: lock\n")
+		_, _ = fmt.Fprintf(w, "Would run: %s %v\n", execName, extraArgs)
+		_, _ = fmt.Fprintf(w, "Directory: %s\n", workDir)
+		switch isoStrategy {
+		case profile.IsolationWorktree:
+			_, _ = fmt.Fprintf(w, "Isolation: worktree at %s\n", workDir)
+		case profile.IsolationLock:
+			_, _ = fmt.Fprintf(w, "Isolation: lock\n")
 		}
 		return nil
 	}
@@ -138,7 +149,7 @@ func (a *cliApp) launchLoop(cmd *cobra.Command, proj model.Project, execPath str
 			w = cmd.ErrOrStderr()
 		}
 
-		fmt.Fprintf(w, "\nClaude exited (code %d).\n", exitCode)
+		_, _ = fmt.Fprintf(w, "\nClaude exited (code %d).\n", exitCode)
 		action := promptPostExit(reader, w)
 
 		switch action {
@@ -149,14 +160,14 @@ func (a *cliApp) launchLoop(cmd *cobra.Command, proj model.Project, execPath str
 			// Re-sync before relaunch.
 			if !noSync {
 				if err := a.syncDeploy(cmd, proj, deployPath); err != nil {
-					fmt.Fprintf(w, "Warning: sync failed: %v\n", err)
+					_, _ = fmt.Fprintf(w, "Warning: sync failed: %v\n", err)
 				}
 			}
 			isRelaunch = true
 
 		case actionConfigure:
 			if err := a.reconfigure(cmd, proj); err != nil {
-				fmt.Fprintf(w, "Reconfigure failed: %v\n", err)
+				_, _ = fmt.Fprintf(w, "Reconfigure failed: %v\n", err)
 				continue
 			}
 			// Reload project after reconfiguration.
@@ -166,7 +177,7 @@ func (a *cliApp) launchLoop(cmd *cobra.Command, proj model.Project, execPath str
 			// Re-sync after reconfiguration.
 			if !noSync {
 				if err := a.syncDeploy(cmd, proj, deployPath); err != nil {
-					fmt.Fprintf(w, "Warning: sync failed: %v\n", err)
+					_, _ = fmt.Fprintf(w, "Warning: sync failed: %v\n", err)
 				}
 			}
 			isRelaunch = true
@@ -250,7 +261,7 @@ func (a *cliApp) syncDeploy(cmd *cobra.Command, proj model.Project, deployPath s
 
 // promptPostExit shows the post-exit prompt and reads the user's choice.
 func promptPostExit(reader io.Reader, w io.Writer) postExitAction {
-	fmt.Fprintf(w, "[R]elaunch / [C]onfigure / [Q]uit: ")
+	_, _ = fmt.Fprintf(w, "[R]elaunch / [C]onfigure / [Q]uit: ")
 
 	scanner := bufio.NewScanner(reader)
 	if scanner.Scan() {
@@ -313,8 +324,8 @@ func launchBare(cmd *cobra.Command, extraArgs []string) error {
 			w = cmd.ErrOrStderr()
 		}
 
-		fmt.Fprintf(w, "\nClaude exited (code %d).\n", exitCode)
-		fmt.Fprintf(w, "[R]elaunch / [Q]uit: ")
+		_, _ = fmt.Fprintf(w, "\nClaude exited (code %d).\n", exitCode)
+		_, _ = fmt.Fprintf(w, "[R]elaunch / [Q]uit: ")
 
 		scanner := bufio.NewScanner(reader)
 		if scanner.Scan() {

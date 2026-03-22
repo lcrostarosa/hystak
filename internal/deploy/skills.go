@@ -53,11 +53,11 @@ func (d *SkillsDeployer) SyncSkills(projectPath string, skills []model.SkillDef)
 					continue // already correct
 				}
 				// Wrong target — remove and recreate.
-				os.Remove(target)
+				_ = os.Remove(target)
 			} else {
 				// Regular file — this is a conflict (legacy copy or user-owned).
 				// Replace legacy copies (from old marker-based deploys).
-				os.Remove(target)
+				_ = os.Remove(target)
 			}
 		}
 
@@ -93,7 +93,7 @@ func (d *SkillsDeployer) cleanStaleSkills(skillsDir string, current map[string]b
 		// Remove any skill directory not in the current set.
 		skillFile := filepath.Join(skillsDir, name, "SKILL.md")
 		if _, err := os.Stat(skillFile); err == nil {
-			os.RemoveAll(filepath.Join(skillsDir, name))
+			_ = os.RemoveAll(filepath.Join(skillsDir, name))
 		}
 	}
 
@@ -118,11 +118,11 @@ func (d *SkillsDeployer) migrateLegacyMarker(skillsDir string) {
 			continue
 		}
 		if info.Mode()&os.ModeSymlink == 0 {
-			os.RemoveAll(filepath.Join(skillsDir, name))
+			_ = os.RemoveAll(filepath.Join(skillsDir, name))
 		}
 	}
 
-	os.Remove(markerPath)
+	_ = os.Remove(markerPath)
 }
 
 // PreflightSkills checks for skill conflicts before deployment.

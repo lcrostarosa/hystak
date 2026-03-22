@@ -16,9 +16,9 @@ func newVersionCmd(version, commit, date string) *cobra.Command {
 		},
 		Run: func(cmd *cobra.Command, args []string) {
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "hystak %s\n", version)
-			fmt.Fprintf(out, "  commit: %s\n", commit)
-			fmt.Fprintf(out, "  built:  %s\n", date)
+			_, _ = fmt.Fprintf(out, "hystak %s\n", version)
+			_, _ = fmt.Fprintf(out, "  commit: %s\n", commit)
+			_, _ = fmt.Fprintf(out, "  built:  %s\n", date)
 		},
 	}
 }

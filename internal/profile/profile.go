@@ -76,33 +76,11 @@ type profileFile struct {
 }
 
 func toFile(p Profile) profileFile {
-	return profileFile{
-		Name:        p.Name,
-		Description: p.Description,
-		MCPs:        p.MCPs,
-		Skills:      p.Skills,
-		Hooks:       p.Hooks,
-		Permissions: p.Permissions,
-		Prompts:     p.Prompts,
-		EnvVars:     p.EnvVars,
-		ClaudeMD:    p.ClaudeMD,
-		Isolation:   p.Isolation,
-	}
+	return profileFile(p)
 }
 
 func fromFile(f profileFile) Profile {
-	return Profile{
-		Name:        f.Name,
-		Description: f.Description,
-		MCPs:        f.MCPs,
-		Skills:      f.Skills,
-		Hooks:       f.Hooks,
-		Permissions: f.Permissions,
-		Prompts:     f.Prompts,
-		EnvVars:     f.EnvVars,
-		ClaudeMD:    f.ClaudeMD,
-		Isolation:   f.Isolation,
-	}
+	return Profile(f)
 }
 
 // Manager handles loading and saving profiles from the global profiles directory.

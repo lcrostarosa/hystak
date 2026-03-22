@@ -39,9 +39,9 @@ func (a *cliApp) newProfileListCmd() *cobra.Command {
 			}
 
 			w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "NAME\tSCOPE\tDESCRIPTION")
+			_, _ = fmt.Fprintln(w, "NAME\tSCOPE\tDESCRIPTION")
 			for _, p := range globals {
-				fmt.Fprintf(w, "%s\t%s\t%s\n", p.Name, "global", p.Description)
+				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", p.Name, "global", p.Description)
 			}
 
 			// Project-scoped profiles (specific project or all).
@@ -57,7 +57,7 @@ func (a *cliApp) newProfileListCmd() *cobra.Command {
 				sort.Strings(names)
 				for _, n := range names {
 					pp := profiles[n]
-					fmt.Fprintf(w, "%s\t%s\t%s\n", n, projectName, pp.Description)
+					_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", n, projectName, pp.Description)
 				}
 			} else {
 				// Show project profiles for all projects.
@@ -73,7 +73,7 @@ func (a *cliApp) newProfileListCmd() *cobra.Command {
 					sort.Strings(names)
 					for _, n := range names {
 						pp := profiles[n]
-						fmt.Fprintf(w, "%s\t%s\t%s\n", n, projName, pp.Description)
+						_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", n, projName, pp.Description)
 					}
 				}
 			}
@@ -106,7 +106,7 @@ func (a *cliApp) newProfileExportCmd() *cobra.Command {
 				if err := os.WriteFile(outputFile, data, 0o644); err != nil {
 					return fmt.Errorf("writing file: %w", err)
 				}
-				fmt.Fprintf(cmd.OutOrStdout(), "Profile %q exported to %s\n", name, outputFile)
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Profile %q exported to %s\n", name, outputFile)
 				return nil
 			}
 
@@ -151,7 +151,7 @@ func (a *cliApp) newProfileImportCmd() *cobra.Command {
 				imported = &importedProfile{name: p.Name}
 			}
 
-			fmt.Fprintf(cmd.OutOrStdout(), "Profile %q imported.\n", imported.name)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Profile %q imported.\n", imported.name)
 			return nil
 		},
 	}

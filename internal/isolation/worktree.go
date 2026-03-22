@@ -132,7 +132,6 @@ func (m *WorktreeManager) List(projectPath string) ([]WorktreeInfo, error) {
 			}
 			currentPath = strings.TrimPrefix(line, "worktree ")
 			currentBranch = ""
-			detached = false
 		case strings.HasPrefix(line, "branch "):
 			currentBranch = strings.TrimPrefix(line, "branch ")
 		case line == "detached":

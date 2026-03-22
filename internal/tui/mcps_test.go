@@ -48,7 +48,7 @@ func testService() *service.Service {
 }
 
 func TestNewMCPsModelNilService(t *testing.T) {
-	m := NewMCPsModel(nil)
+	m := NewMCPsModel(nil, newDefaultKeyMap())
 	if m.list.FilterState() != 0 {
 		t.Error("expected initial filter state to be unfiltered")
 	}
@@ -56,7 +56,7 @@ func TestNewMCPsModelNilService(t *testing.T) {
 
 func TestNewMCPsModelPopulatesList(t *testing.T) {
 	svc := testService()
-	m := NewMCPsModel(svc)
+	m := NewMCPsModel(svc, newDefaultKeyMap())
 
 	items := m.list.Items()
 	if len(items) != 2 {
@@ -76,7 +76,7 @@ func TestNewMCPsModelPopulatesList(t *testing.T) {
 
 func TestMCPItemProfileCount(t *testing.T) {
 	svc := testService()
-	m := NewMCPsModel(svc)
+	m := NewMCPsModel(svc, newDefaultKeyMap())
 
 	items := m.list.Items()
 	github := items[0].(mcpItem)
@@ -130,7 +130,7 @@ func TestMCPItemFilterValue(t *testing.T) {
 
 func TestSelectedMCP(t *testing.T) {
 	svc := testService()
-	m := NewMCPsModel(svc)
+	m := NewMCPsModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	srv, ok := m.selectedMCP()
@@ -144,7 +144,7 @@ func TestSelectedMCP(t *testing.T) {
 }
 
 func TestSelectedMCPEmpty(t *testing.T) {
-	m := NewMCPsModel(nil)
+	m := NewMCPsModel(nil, newDefaultKeyMap())
 	_, ok := m.selectedMCP()
 	if ok {
 		t.Error("expected no selected MCP with nil service")
@@ -152,7 +152,7 @@ func TestSelectedMCPEmpty(t *testing.T) {
 }
 
 func TestSetSize(t *testing.T) {
-	m := NewMCPsModel(nil)
+	m := NewMCPsModel(nil, newDefaultKeyMap())
 	m.SetSize(100, 30)
 	if m.width != 100 {
 		t.Errorf("expected width 100, got %d", m.width)
@@ -163,7 +163,7 @@ func TestSetSize(t *testing.T) {
 }
 
 func TestIsConsuming(t *testing.T) {
-	m := NewMCPsModel(nil)
+	m := NewMCPsModel(nil, newDefaultKeyMap())
 	if m.IsConsuming() {
 		t.Error("expected IsConsuming to be false initially")
 	}
@@ -176,7 +176,7 @@ func TestIsConsuming(t *testing.T) {
 }
 
 func TestStatusHelp(t *testing.T) {
-	m := NewMCPsModel(nil)
+	m := NewMCPsModel(nil, newDefaultKeyMap())
 	help := m.StatusHelp()
 	if !strings.Contains(help, "d: delete") {
 		t.Errorf("expected 'd: delete' in help, got %q", help)
@@ -191,7 +191,7 @@ func TestStatusHelp(t *testing.T) {
 
 func TestDeleteConfirmation(t *testing.T) {
 	svc := testService()
-	m := NewMCPsModel(svc)
+	m := NewMCPsModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	// Press 'd' to start delete confirmation.
@@ -209,7 +209,7 @@ func TestDeleteConfirmation(t *testing.T) {
 
 func TestDeleteConfirmExecute(t *testing.T) {
 	svc := testService()
-	m := NewMCPsModel(svc)
+	m := NewMCPsModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	// Start delete.
@@ -268,7 +268,7 @@ func TestDeleteRefusedByTag(t *testing.T) {
 	}
 	svc := service.NewForTest(reg, store, nil, nil, "", nil)
 
-	m := NewMCPsModel(svc)
+	m := NewMCPsModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	// Start and confirm delete — should fail because github is in tag "core".
@@ -290,7 +290,7 @@ func TestDeleteRefusedByTag(t *testing.T) {
 
 func TestViewRendersDetail(t *testing.T) {
 	svc := testService()
-	m := NewMCPsModel(svc)
+	m := NewMCPsModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	view := m.View()
@@ -304,14 +304,14 @@ func TestViewRendersDetail(t *testing.T) {
 }
 
 func TestViewEmptyWithZeroSize(t *testing.T) {
-	m := NewMCPsModel(nil)
+	m := NewMCPsModel(nil, newDefaultKeyMap())
 	if view := m.View(); view != "" {
 		t.Errorf("expected empty string for zero-size view, got %q", view)
 	}
 }
 
 func TestRenderDetailNoSelection(t *testing.T) {
-	m := NewMCPsModel(nil)
+	m := NewMCPsModel(nil, newDefaultKeyMap())
 	detail := m.renderDetail(40, 20)
 	if !strings.Contains(detail, "No MCP selected") {
 		t.Errorf("expected 'No MCP selected', got:\n%s", detail)
@@ -320,7 +320,7 @@ func TestRenderDetailNoSelection(t *testing.T) {
 
 func TestRenderDetailShowsFields(t *testing.T) {
 	svc := testService()
-	m := NewMCPsModel(svc)
+	m := NewMCPsModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	detail := m.renderDetail(40, 20)
@@ -335,7 +335,7 @@ func TestRenderDetailShowsFields(t *testing.T) {
 
 func TestRenderDetailHTTPServer(t *testing.T) {
 	svc := testService()
-	m := NewMCPsModel(svc)
+	m := NewMCPsModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	// Navigate to second item (qdrant).
@@ -412,11 +412,11 @@ func TestCountServerProfileRefs(t *testing.T) {
 
 func TestRefreshList(t *testing.T) {
 	svc := testService()
-	m := NewMCPsModel(svc)
+	m := NewMCPsModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	// Add a new server to registry.
-	svc.AddServer(model.ServerDef{
+	_ = svc.AddServer(model.ServerDef{
 		Name:      "new-server",
 		Transport: model.TransportStdio,
 		Command:   "new-cmd",

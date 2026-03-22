@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -90,6 +91,7 @@ type RequestLaunchMsg struct {
 type ProfilesModel struct {
 	list    list.Model
 	service *service.Service
+	keys    KeyMap
 	width   int
 	height  int
 
@@ -107,10 +109,13 @@ type ProfilesModel struct {
 	allHooks       []string
 	allPermissions []string
 	allTemplates   []string
+
+	// Track selection for ProfileSelectionChangedMsg.
+	lastSelectedName string
 }
 
 // NewProfilesModel creates a new ProfilesModel.
-func NewProfilesModel(svc *service.Service) ProfilesModel {
+func NewProfilesModel(svc *service.Service, keys KeyMap) ProfilesModel {
 	items := buildProfileItems(svc)
 	delegate := list.NewDefaultDelegate()
 	l := list.New(items, delegate, 0, 0)
@@ -123,6 +128,7 @@ func NewProfilesModel(svc *service.Service) ProfilesModel {
 	return ProfilesModel{
 		list:           l,
 		service:        svc,
+		keys:           keys,
 		allMCPs:        buildAllServerNames(svc),
 		allSkills:      buildAllSkillNames(svc),
 		allHooks:       buildAllHookNames(svc),
@@ -282,9 +288,13 @@ func (m ProfilesModel) StatusHelp() string {
 		return "y: confirm delete | n: cancel"
 	}
 	if m.focus == focusRight {
-		return "space: toggle | tab/S-tab: section | s: sync | D: diff | I: discover | esc: back"
+		return "space: toggle | tab/S-tab: section | esc: back"
 	}
-	return "enter: configure | L: launch | d: delete | s: sync | D: diff | I: discover | /: filter | tab: switch tabs | q: quit"
+	return fmt.Sprintf("%s: launch | %s: configure | %s: delete | /: filter | %s | q: quit",
+		m.keys.ProfileLaunch.Help().Key,
+		m.keys.ProfileConfigure.Help().Key,
+		m.keys.ProfileDelete.Help().Key,
+		m.keys.tabNavHelp())
 }
 
 // autoSync triggers an async sync for the given project.
@@ -367,21 +377,6 @@ func (m ProfilesModel) Update(msg tea.Msg) (ProfilesModel, tea.Cmd) {
 			case " ":
 				cmd := m.toggleAssignment()
 				return m, cmd
-			case "s":
-				m.syncSelectedProfile()
-				return m, nil
-			case "D":
-				if proj, ok := m.selectedProfile(); ok {
-					return m, func() tea.Msg { return RequestDiffMsg{ProjectName: proj.Name} }
-				}
-				return m, nil
-			case "I":
-				if proj, ok := m.selectedProfile(); ok {
-					return m, func() tea.Msg {
-						return RequestDiscoveryMsg{ProjectName: proj.Name, ProjectPath: proj.Path}
-					}
-				}
-				return m, nil
 			case "esc", "h":
 				m.focus = focusLeft
 				return m, nil
@@ -394,15 +389,20 @@ func (m ProfilesModel) Update(msg tea.Msg) (ProfilesModel, tea.Cmd) {
 			break
 		}
 
-		switch msg.String() {
-		case "d":
+		switch {
+		case key.Matches(msg, m.keys.ProfileDelete):
 			if _, ok := m.selectedProfile(); ok {
 				m.confirming = true
 				m.err = nil
 				m.syncMsg = ""
 			}
 			return m, nil
-		case "enter", "l":
+		case key.Matches(msg, m.keys.ProfileLaunch):
+			if proj, ok := m.selectedProfile(); ok {
+				return m, func() tea.Msg { return RequestLaunchMsg{ProfileName: proj.Name} }
+			}
+			return m, nil
+		case key.Matches(msg, m.keys.ProfileConfigure):
 			if _, ok := m.selectedProfile(); ok {
 				m.focus = focusRight
 				m.activeSection = sectionMCPs
@@ -410,31 +410,20 @@ func (m ProfilesModel) Update(msg tea.Msg) (ProfilesModel, tea.Cmd) {
 				m.syncMsg = ""
 			}
 			return m, nil
-		case "s":
-			m.syncSelectedProfile()
-			return m, nil
-		case "D":
-			if proj, ok := m.selectedProfile(); ok {
-				return m, func() tea.Msg { return RequestDiffMsg{ProjectName: proj.Name} }
-			}
-			return m, nil
-		case "L":
-			if proj, ok := m.selectedProfile(); ok {
-				return m, func() tea.Msg { return RequestLaunchMsg{ProfileName: proj.Name} }
-			}
-			return m, nil
-		case "I":
-			if proj, ok := m.selectedProfile(); ok {
-				return m, func() tea.Msg {
-					return RequestDiscoveryMsg{ProjectName: proj.Name, ProjectPath: proj.Path}
-				}
-			}
-			return m, nil
 		}
 	}
 
 	var cmd tea.Cmd
 	m.list, cmd = m.list.Update(msg)
+	// Emit selection change if the selected profile changed.
+	if proj, ok := m.selectedProfile(); ok && proj.Name != m.lastSelectedName {
+		m.lastSelectedName = proj.Name
+		name := proj.Name
+		path := proj.Path
+		cmd = tea.Batch(cmd, func() tea.Msg {
+			return ProfileSelectionChangedMsg{ProfileName: name, ProjectPath: path}
+		})
+	}
 	return m, cmd
 }
 

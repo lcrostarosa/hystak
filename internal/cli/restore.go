@@ -53,7 +53,7 @@ func (a *cliApp) newRestoreCmd() *cobra.Command {
 			}
 
 			if len(entries) == 0 {
-				fmt.Fprintln(cmd.OutOrStdout(), "No backups found.")
+				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No backups found.")
 				return nil
 			}
 
@@ -68,16 +68,16 @@ func (a *cliApp) newRestoreCmd() *cobra.Command {
 				selected = index
 			} else {
 				out := cmd.OutOrStdout()
-				fmt.Fprintln(out, "Available backups:")
+				_, _ = fmt.Fprintln(out, "Available backups:")
 				for i, e := range entries {
-					fmt.Fprintf(out, "  [%d] %s  %s  %s\n",
+					_, _ = fmt.Fprintf(out, "  [%d] %s  %s  %s\n",
 						i,
 						e.Timestamp.Format("2006-01-02 15:04:05"),
 						e.ClientType,
 						e.BackupPath,
 					)
 				}
-				fmt.Fprint(out, "Select backup to restore: ")
+				_, _ = fmt.Fprint(out, "Select backup to restore: ")
 
 				line, err := reader.ReadString('\n')
 				if err != nil {
@@ -101,14 +101,14 @@ func (a *cliApp) newRestoreCmd() *cobra.Command {
 
 			// Confirmation.
 			out := cmd.OutOrStdout()
-			fmt.Fprintf(out, "Restore %s → %s? [y/N] ", entry.BackupPath, entry.SourcePath)
+			_, _ = fmt.Fprintf(out, "Restore %s → %s? [y/N] ", entry.BackupPath, entry.SourcePath)
 
 			line, err := reader.ReadString('\n')
 			if err != nil {
 				return fmt.Errorf("reading input: %w", err)
 			}
 			if strings.TrimSpace(strings.ToLower(line)) != "y" {
-				fmt.Fprintln(out, "Cancelled.")
+				_, _ = fmt.Fprintln(out, "Cancelled.")
 				return nil
 			}
 
@@ -116,7 +116,7 @@ func (a *cliApp) newRestoreCmd() *cobra.Command {
 				return err
 			}
 
-			fmt.Fprintf(out, "Restored → %s\n", entry.SourcePath)
+			_, _ = fmt.Fprintf(out, "Restored → %s\n", entry.SourcePath)
 			return nil
 		},
 	}

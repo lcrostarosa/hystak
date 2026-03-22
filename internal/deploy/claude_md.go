@@ -81,7 +81,7 @@ func (d *ClaudeMDDeployer) syncSymlink(projectPath, templateSource string) error
 				return nil // already correct
 			}
 			// Wrong target — remove and recreate.
-			os.Remove(target)
+			_ = os.Remove(target)
 		} else {
 			// Regular file — check for managed sentinel.
 			content, err := os.ReadFile(target)
@@ -90,7 +90,7 @@ func (d *ClaudeMDDeployer) syncSymlink(projectPath, templateSource string) error
 			}
 			if strings.HasPrefix(string(content), legacyHystakSentinel) {
 				// Managed file — replace with symlink.
-				os.Remove(target)
+				_ = os.Remove(target)
 			} else {
 				// User-owned file — leave it alone.
 				return nil
@@ -143,7 +143,7 @@ func (d *ClaudeMDDeployer) syncComposed(projectPath, templateSource string, prom
 	if err == nil {
 		if info.Mode()&os.ModeSymlink != 0 {
 			// Previous symlink — remove to write composed file.
-			os.Remove(target)
+			_ = os.Remove(target)
 		} else {
 			// Regular file — check for managed sentinel.
 			existing, err := os.ReadFile(target)

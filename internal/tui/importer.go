@@ -348,7 +348,7 @@ func (m ImportModel) renderPreview(b *strings.Builder) {
 
 		// Show server details in a compact line.
 		detail := formatServerCompact(c.Server)
-		b.WriteString(fmt.Sprintf("       %s\n", formHintStyle.Render(detail)))
+		fmt.Fprintf(b, "       %s\n", formHintStyle.Render(detail))
 	}
 
 	b.WriteString("\n")
@@ -365,8 +365,8 @@ func (m ImportModel) renderConflict(b *strings.Builder) {
 
 	b.WriteString(formTitleStyle.Render("Resolve Conflict"))
 	b.WriteString("\n\n")
-	b.WriteString(fmt.Sprintf("MCP %s already exists in the registry.\n\n",
-		detailTitleStyle.Render(c.Name)))
+	fmt.Fprintf(b, "MCP %s already exists in the registry.\n\n",
+		detailTitleStyle.Render(c.Name))
 
 	// Show imported server details.
 	b.WriteString(formLabelStyle.Render("Imported:"))
@@ -389,7 +389,7 @@ func (m ImportModel) renderConflict(b *strings.Builder) {
 		if i == m.cursor {
 			cursor = "▸ "
 		}
-		b.WriteString(fmt.Sprintf("%s%s\n", cursor, opt))
+		fmt.Fprintf(b, "%s%s\n", cursor, opt)
 	}
 
 	// Show rename input when on rename option.

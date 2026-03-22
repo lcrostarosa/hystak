@@ -198,7 +198,7 @@ func TestLaunchWizardCompleteMsg(t *testing.T) {
 
 	// Now in checklist, press enter to launch
 	var cmd tea.Cmd
-	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("expected a command from completing the wizard")
 	}
@@ -218,7 +218,7 @@ func TestLaunchWizardCompleteMsg(t *testing.T) {
 func TestLaunchWizardCancelFromFirstStep(t *testing.T) {
 	m := newTestWizard()
 	var cmd tea.Cmd
-	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd == nil {
 		t.Fatal("expected a command from esc on first step")
 	}
@@ -352,7 +352,7 @@ func TestLaunchWizardCtrlCCancel(t *testing.T) {
 	m = sendSpecialKey(m, tea.KeyEnter) // → Skills
 	m = sendSpecialKey(m, tea.KeyEnter) // → Permissions
 	var cmd tea.Cmd
-	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	if cmd == nil {
 		t.Fatal("expected command from ctrl+c")
 	}
@@ -460,7 +460,7 @@ func TestLaunchWizardHubSelectionCounts(t *testing.T) {
 func TestLaunchWizardHubCancel(t *testing.T) {
 	m := NewLaunchWizardModel(testProject(), LWModeHub, testDiscoveredItems(), nil)
 	var cmd tea.Cmd
-	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd == nil {
 		t.Fatal("expected command from esc in hub mode")
 	}
@@ -523,7 +523,7 @@ func TestLaunchWizardChecklistCancel(t *testing.T) {
 	m := newTestWizard()
 	m = advanceToChecklist(m)
 	var cmd tea.Cmd
-	m, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	_, cmd = m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd == nil {
 		t.Fatal("expected command from esc on checklist")
 	}

@@ -161,8 +161,8 @@ func TestWorktreeTwoWorktreesIndependent(t *testing.T) {
 	path2, _ := wm.Create(dir, "two")
 
 	// Write a file in each worktree.
-	os.WriteFile(filepath.Join(path1, "wt1.txt"), []byte("one"), 0o644)
-	os.WriteFile(filepath.Join(path2, "wt2.txt"), []byte("two"), 0o644)
+	_ = os.WriteFile(filepath.Join(path1, "wt1.txt"), []byte("one"), 0o644)
+	_ = os.WriteFile(filepath.Join(path2, "wt2.txt"), []byte("two"), 0o644)
 
 	// Each worktree should only have its own file.
 	if _, err := os.Stat(filepath.Join(path1, "wt2.txt")); err == nil {
@@ -191,7 +191,7 @@ func TestWorktreeNonGitRepo(t *testing.T) {
 func TestWorktreePath(t *testing.T) {
 	dir := t.TempDir()
 	projDir := filepath.Join(dir, "myproject")
-	os.Mkdir(projDir, 0o755)
+	_ = os.Mkdir(projDir, 0o755)
 
 	wm := NewWorktreeManager()
 	p := wm.Path(projDir, "frontend")
@@ -252,7 +252,7 @@ func TestLockPreventsDoubleAcquire(t *testing.T) {
 	if err := lm.Acquire(dir); err != nil {
 		t.Fatalf("first Acquire: %v", err)
 	}
-	defer lm.Release(dir)
+	defer func() { _ = lm.Release(dir) }()
 
 	err := lm.Acquire(dir)
 	if err == nil {
@@ -266,7 +266,7 @@ func TestLockStaleDetection(t *testing.T) {
 
 	// Write a lock file with a PID that doesn't exist.
 	// PID 99999999 is extremely unlikely to be running.
-	os.WriteFile(filepath.Join(dir, lockFileName), []byte("99999999"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, lockFileName), []byte("99999999"), 0o644)
 
 	locked, _, err := lm.IsLocked(dir)
 	if err != nil {
@@ -287,7 +287,7 @@ func TestLockMalformedFile(t *testing.T) {
 	lm := NewLockManager()
 
 	// Write a malformed lock file.
-	os.WriteFile(filepath.Join(dir, lockFileName), []byte("not-a-pid"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, lockFileName), []byte("not-a-pid"), 0o644)
 
 	locked, _, err := lm.IsLocked(dir)
 	if err != nil {

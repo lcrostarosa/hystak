@@ -238,7 +238,7 @@ func TestAssignServer(t *testing.T) {
 
 	// github is already assigned via tag, not direct MCP.
 	// Let's add a new project first.
-	svc.AddProject(model.Project{Name: "test-proj", Path: "/tmp/test"})
+	_ = svc.AddProject(model.Project{Name: "test-proj", Path: "/tmp/test"})
 
 	if err := svc.AssignServer("test-proj", "github"); err != nil {
 		t.Fatalf("AssignServer: %v", err)

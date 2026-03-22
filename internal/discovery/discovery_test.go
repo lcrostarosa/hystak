@@ -41,7 +41,7 @@ func writeJSON(t *testing.T, base string, relPath string, v any) {
 func TestScanMCPs_Global(t *testing.T) {
 	base := setup(t)
 	claudeHome := filepath.Join(base, ".claude")
-	os.MkdirAll(claudeHome, 0o755)
+	_ = os.MkdirAll(claudeHome, 0o755)
 
 	// Write ~/.claude.json with mcpServers
 	globalConfig := map[string]any{
@@ -94,10 +94,10 @@ func TestScanMCPs_Global(t *testing.T) {
 func TestScanMCPs_Project(t *testing.T) {
 	base := setup(t)
 	claudeHome := filepath.Join(base, ".claude")
-	os.MkdirAll(claudeHome, 0o755)
+	_ = os.MkdirAll(claudeHome, 0o755)
 
 	projectPath := filepath.Join(base, "myproject")
-	os.MkdirAll(projectPath, 0o755)
+	_ = os.MkdirAll(projectPath, 0o755)
 
 	projConfig := map[string]any{
 		"mcpServers": map[string]any{
@@ -137,10 +137,10 @@ func newRegistry() *registry.Registry {
 func TestScanMCPs_Registry(t *testing.T) {
 	base := setup(t)
 	claudeHome := filepath.Join(base, ".claude")
-	os.MkdirAll(claudeHome, 0o755)
+	_ = os.MkdirAll(claudeHome, 0o755)
 
 	reg := newRegistry()
-	reg.Add(model.ServerDef{
+	_ = reg.Add(model.ServerDef{
 		Name:      "registry-mcp",
 		Transport: model.TransportStdio,
 		Command:   "reg-cmd",
@@ -171,7 +171,7 @@ func TestScanMCPs_Deduplication(t *testing.T) {
 	// Same MCP in global + project → both shown with correct source
 	base := setup(t)
 	claudeHome := filepath.Join(base, ".claude")
-	os.MkdirAll(claudeHome, 0o755)
+	_ = os.MkdirAll(claudeHome, 0o755)
 
 	projectPath := filepath.Join(base, "myproject")
 	mcpConfig := map[string]any{
@@ -217,7 +217,7 @@ func TestScanMCPs_MissingDir(t *testing.T) {
 func TestScanMCPs_MalformedJSON(t *testing.T) {
 	base := setup(t)
 	claudeHome := filepath.Join(base, ".claude")
-	os.MkdirAll(claudeHome, 0o755)
+	_ = os.MkdirAll(claudeHome, 0o755)
 
 	// Write malformed JSON
 	writeFile(t, base, ".claude.json", "{invalid json")
@@ -273,7 +273,7 @@ func TestScanSkills_Global(t *testing.T) {
 func TestScanSkills_Project(t *testing.T) {
 	base := setup(t)
 	claudeHome := filepath.Join(base, ".claude")
-	os.MkdirAll(claudeHome, 0o755)
+	_ = os.MkdirAll(claudeHome, 0o755)
 
 	projectPath := filepath.Join(base, "myproject")
 	writeFile(t, projectPath, ".claude/skills/local-skill/SKILL.md", "# Local Skill")
@@ -295,14 +295,14 @@ func TestScanSkills_SymlinkDetected(t *testing.T) {
 
 	// Create a real skill as the source.
 	sourceDir := filepath.Join(base, "hystak-skills", "managed-skill")
-	os.MkdirAll(sourceDir, 0o755)
-	os.WriteFile(filepath.Join(sourceDir, "SKILL.md"), []byte("# Managed"), 0o644)
+	_ = os.MkdirAll(sourceDir, 0o755)
+	_ = os.WriteFile(filepath.Join(sourceDir, "SKILL.md"), []byte("# Managed"), 0o644)
 
 	// Create a symlink in the project skills directory.
 	projectPath := filepath.Join(base, "myproject")
 	skillDir := filepath.Join(projectPath, ".claude", "skills", "managed-skill")
-	os.MkdirAll(skillDir, 0o755)
-	os.Symlink(filepath.Join(sourceDir, "SKILL.md"), filepath.Join(skillDir, "SKILL.md"))
+	_ = os.MkdirAll(skillDir, 0o755)
+	_ = os.Symlink(filepath.Join(sourceDir, "SKILL.md"), filepath.Join(skillDir, "SKILL.md"))
 
 	engine := NewEngine(claudeHome, nil)
 	skills := engine.ScanSkills(projectPath)
@@ -333,7 +333,7 @@ func TestScanSkills_NoSKILLFile(t *testing.T) {
 	claudeHome := filepath.Join(base, ".claude")
 
 	// Create skill dir without SKILL.md
-	os.MkdirAll(filepath.Join(claudeHome, "skills", "empty-skill"), 0o755)
+	_ = os.MkdirAll(filepath.Join(claudeHome, "skills", "empty-skill"), 0o755)
 
 	engine := NewEngine(claudeHome, nil)
 	skills := engine.ScanSkills("")
@@ -413,7 +413,7 @@ func TestScanHooks_Global(t *testing.T) {
 func TestScanHooks_Project(t *testing.T) {
 	base := setup(t)
 	claudeHome := filepath.Join(base, ".claude")
-	os.MkdirAll(claudeHome, 0o755)
+	_ = os.MkdirAll(claudeHome, 0o755)
 
 	projectPath := filepath.Join(base, "myproject")
 	settings := map[string]any{
@@ -464,9 +464,10 @@ func TestScanPermissions_Global(t *testing.T) {
 
 	allowCount, denyCount := 0, 0
 	for _, p := range perms {
-		if p.Type == "allow" {
+		switch p.Type {
+		case "allow":
 			allowCount++
-		} else if p.Type == "deny" {
+		case "deny":
 			denyCount++
 		}
 		if p.Source != SourceGlobal {
@@ -484,7 +485,7 @@ func TestScanPermissions_Global(t *testing.T) {
 func TestScanPermissions_Project(t *testing.T) {
 	base := setup(t)
 	claudeHome := filepath.Join(base, ".claude")
-	os.MkdirAll(claudeHome, 0o755)
+	_ = os.MkdirAll(claudeHome, 0o755)
 
 	projectPath := filepath.Join(base, "myproject")
 	settings := map[string]any{
@@ -542,7 +543,7 @@ func TestScanEnvVars_Global(t *testing.T) {
 func TestScanEnvVars_Project(t *testing.T) {
 	base := setup(t)
 	claudeHome := filepath.Join(base, ".claude")
-	os.MkdirAll(claudeHome, 0o755)
+	_ = os.MkdirAll(claudeHome, 0o755)
 
 	projectPath := filepath.Join(base, "myproject")
 	settings := map[string]any{
@@ -616,7 +617,7 @@ func TestScan_FullIntegration(t *testing.T) {
 
 	// Registry: one MCP
 	reg := newRegistry()
-	reg.Add(model.ServerDef{Name: "registry-mcp", Transport: model.TransportStdio, Command: "rm"})
+	_ = reg.Add(model.ServerDef{Name: "registry-mcp", Transport: model.TransportStdio, Command: "rm"})
 
 	engine := NewEngine(claudeHome, reg)
 	items := engine.Scan(projectPath)

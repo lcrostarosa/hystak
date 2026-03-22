@@ -21,14 +21,14 @@ func testImportService(t *testing.T, importServers map[string]interface{}) (*ser
 
 	dir := t.TempDir()
 	configDir := filepath.Join(dir, "config")
-	os.MkdirAll(configDir, 0o755)
+	_ = os.MkdirAll(configDir, 0o755)
 
 	// Write a .mcp.json file with servers to import.
 	projectDir := filepath.Join(dir, "project")
-	os.MkdirAll(projectDir, 0o755)
+	_ = os.MkdirAll(projectDir, 0o755)
 	mcpData := map[string]interface{}{"mcpServers": importServers}
 	data, _ := json.Marshal(mcpData)
-	os.WriteFile(filepath.Join(projectDir, ".mcp.json"), data, 0o644)
+	_ = os.WriteFile(filepath.Join(projectDir, ".mcp.json"), data, 0o644)
 
 	reg := &registry.Registry{
 		Servers: map[string]model.ServerDef{
@@ -549,7 +549,7 @@ func TestAppImportCompleted(t *testing.T) {
 
 func TestMCPsTabImportKey(t *testing.T) {
 	svc := testService()
-	m := NewMCPsModel(svc)
+	m := NewMCPsModel(svc, newDefaultKeyMap())
 	m.SetSize(80, 24)
 
 	_, cmd := m.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune{'i'}}))
