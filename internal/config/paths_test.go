@@ -7,7 +7,23 @@ import (
 	"testing"
 )
 
+func clearOverride(t *testing.T) {
+	t.Helper()
+	OverrideDir("")
+	t.Cleanup(func() { OverrideDir("") })
+}
+
+func TestDir_OverrideDir(t *testing.T) {
+	clearOverride(t)
+	OverrideDir("/override/path")
+	t.Setenv("HYSTAK_CONFIG_DIR", "/should/not/use")
+	if got := Dir(); got != "/override/path" {
+		t.Errorf("Dir() = %q, want %q", got, "/override/path")
+	}
+}
+
 func TestDir_HYSTAK_CONFIG_DIR(t *testing.T) {
+	clearOverride(t)
 	t.Setenv("HYSTAK_CONFIG_DIR", "/custom/hystak")
 	t.Setenv("XDG_CONFIG_HOME", "/should/not/use")
 	if got := Dir(); got != "/custom/hystak" {
@@ -16,6 +32,7 @@ func TestDir_HYSTAK_CONFIG_DIR(t *testing.T) {
 }
 
 func TestDir_XDG_CONFIG_HOME(t *testing.T) {
+	clearOverride(t)
 	t.Setenv("HYSTAK_CONFIG_DIR", "")
 	t.Setenv("XDG_CONFIG_HOME", "/xdg/config")
 	if got := Dir(); got != "/xdg/config/hystak" {
@@ -24,6 +41,7 @@ func TestDir_XDG_CONFIG_HOME(t *testing.T) {
 }
 
 func TestDir_DefaultHome(t *testing.T) {
+	clearOverride(t)
 	t.Setenv("HYSTAK_CONFIG_DIR", "")
 	t.Setenv("XDG_CONFIG_HOME", "")
 	home, err := os.UserHomeDir()

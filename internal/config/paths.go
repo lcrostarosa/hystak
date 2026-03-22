@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 )
 
+// overrideDir is set by CLI --config-dir flag via OverrideDir.
+var overrideDir string
+
 // Subdirectories under the hystak config root.
 var subdirs = []string{
 	"profiles",
@@ -14,9 +17,18 @@ var subdirs = []string{
 	"prompts",
 }
 
+// OverrideDir sets a programmatic override for the config directory.
+// This takes highest priority in Dir() resolution.
+func OverrideDir(dir string) {
+	overrideDir = dir
+}
+
 // Dir returns the hystak configuration directory.
-// It checks HYSTAK_CONFIG_DIR, then XDG_CONFIG_HOME/hystak, then ~/.hystak.
+// Priority: OverrideDir > HYSTAK_CONFIG_DIR > XDG_CONFIG_HOME/hystak > ~/.hystak.
 func Dir() string {
+	if overrideDir != "" {
+		return overrideDir
+	}
 	if d := os.Getenv("HYSTAK_CONFIG_DIR"); d != "" {
 		return d
 	}
