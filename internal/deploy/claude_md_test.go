@@ -5,14 +5,11 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-
-	"github.com/hystak/hystak/internal/config"
 )
 
 func TestClaudeMDDeployer_Sync_SymlinkMode(t *testing.T) {
 	tmp := t.TempDir()
-	config.OverrideDir(tmp)
-	t.Cleanup(func() { config.OverrideDir("") })
+
 	d := &ClaudeMDDeployer{}
 	projDir := filepath.Join(tmp, "project")
 	if err := os.MkdirAll(projDir, 0o755); err != nil {
@@ -117,8 +114,7 @@ func TestClaudeMDDeployer_Sync_RemoveManaged(t *testing.T) {
 
 func TestClaudeMDDeployer_Sync_PreservesUserOwned(t *testing.T) {
 	tmp := t.TempDir()
-	config.OverrideDir(tmp)
-	t.Cleanup(func() { config.OverrideDir("") })
+
 	d := &ClaudeMDDeployer{}
 	projDir := filepath.Join(tmp, "project")
 	if err := os.MkdirAll(projDir, 0o755); err != nil {

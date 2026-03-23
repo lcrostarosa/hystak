@@ -5,14 +5,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/hystak/hystak/internal/config"
 	"github.com/hystak/hystak/internal/model"
 )
 
 func TestSkillsDeployer_Sync(t *testing.T) {
 	tmp := t.TempDir()
-	config.OverrideDir(tmp)
-	t.Cleanup(func() { config.OverrideDir("") })
 	d := &SkillsDeployer{}
 
 	// Create a source skill file
@@ -61,8 +58,6 @@ func TestSkillsDeployer_Sync(t *testing.T) {
 
 func TestSkillsDeployer_Sync_RemovesStale(t *testing.T) {
 	tmp := t.TempDir()
-	config.OverrideDir(tmp)
-	t.Cleanup(func() { config.OverrideDir("") })
 	d := &SkillsDeployer{}
 	projDir := filepath.Join(tmp, "project")
 
@@ -121,8 +116,6 @@ func TestSkillsDeployer_Preflight_RegularFile(t *testing.T) {
 
 func TestSkillsDeployer_ReadDeployed(t *testing.T) {
 	tmp := t.TempDir()
-	config.OverrideDir(tmp)
-	t.Cleanup(func() { config.OverrideDir("") })
 	d := &SkillsDeployer{}
 	projDir := filepath.Join(tmp, "project")
 
