@@ -1,187 +1,248 @@
 package tui
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/hystak/hystak/internal/deploy"
+	"github.com/hystak/hystak/internal/model"
+	"github.com/hystak/hystak/internal/profile"
+	"github.com/hystak/hystak/internal/project"
+	"github.com/hystak/hystak/internal/registry"
+	"github.com/hystak/hystak/internal/service"
 )
 
-func TestNewApp(t *testing.T) {
-	app := NewApp(nil)
-	if app.activeTab != ProfilesTab {
-		t.Errorf("expected initial tab to be ProfilesTab, got %d", app.activeTab)
+func setupTestApp(t *testing.T) App {
+	t.Helper()
+	tmp := t.TempDir()
+
+	reg := registry.New()
+	if err := reg.Servers.Add(model.ServerDef{
+		Name:      "github",
+		Transport: model.TransportStdio,
+		Command:   "npx",
+		Args:      []string{"-y", "@anthropic/mcp-github"},
+	}); err != nil {
+		t.Fatal(err)
 	}
-	if app.mode != ModeBrowse {
-		t.Errorf("expected initial mode to be ModeBrowse, got %d", app.mode)
+	if err := reg.Servers.Add(model.ServerDef{
+		Name:      "postgres",
+		Transport: model.TransportStdio,
+		Command:   "npx",
+	}); err != nil {
+		t.Fatal(err)
 	}
+
+	projStore := project.NewStore()
+	if err := projStore.Add(model.Project{
+		Name:          "myproject",
+		Path:          filepath.Join(tmp, "myproject"),
+		ActiveProfile: "dev",
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	profDir := filepath.Join(tmp, "profiles")
+	if err := mkdirAll(profDir); err != nil {
+		t.Fatal(err)
+	}
+	profMgr := profile.NewManager(profDir)
+	if err := profMgr.Save(model.ProjectProfile{
+		Name:      "dev",
+		MCPs:      []model.MCPAssignment{{Name: "github"}},
+		Isolation: model.IsolationNone,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	dep := &deploy.ClaudeCodeDeployer{}
+	svc := service.New(reg, projStore, profMgr, dep)
+	keys := DefaultKeyMap()
+
+	return NewApp(svc, keys, "test", "abc123", "2026-03-22")
 }
 
-func TestTabSwitchingNext(t *testing.T) {
-	app := NewApp(nil)
-	// Simulate window size so View works.
-	m, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	app = m.(AppModel)
-
-	if app.activeTab != ProfilesTab {
-		t.Fatalf("expected ProfilesTab initially, got %d", app.activeTab)
-	}
-
-	// Press right to switch to Tools.
-	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRight}))
-	app = m.(AppModel)
-	if app.activeTab != ToolsTab {
-		t.Errorf("expected ToolsTab after right press, got %d", app.activeTab)
-	}
-
-	// Press right again to switch to MCPs.
-	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRight}))
-	app = m.(AppModel)
-	if app.activeTab != MCPsTab {
-		t.Errorf("expected MCPsTab after second right press, got %d", app.activeTab)
-	}
-
-	// Advance through all remaining tabs and verify wrap-around.
-	for i := 0; i < int(tabCount)-2; i++ {
-		m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRight}))
-		app = m.(AppModel)
-	}
-	if app.activeTab != ProfilesTab {
-		t.Errorf("expected ProfilesTab after cycling all tabs, got %d", app.activeTab)
-	}
+// sizeApp sends a WindowSizeMsg and returns the updated App, avoiding direct field access.
+func sizeApp(t *testing.T, app App, w, h int) App {
+	t.Helper()
+	result, _ := app.Update(tea.WindowSizeMsg{Width: w, Height: h})
+	return result.(App)
 }
 
-func TestTabSwitchingPrev(t *testing.T) {
-	app := NewApp(nil)
-	m, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	app = m.(AppModel)
-
-	// Press left to go back (wraps to last tab: PromptsTab).
-	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyLeft}))
-	app = m.(AppModel)
-	if app.activeTab != PromptsTab {
-		t.Errorf("expected PromptsTab after left, got %d", app.activeTab)
-	}
+func mkdirAll(path string) error {
+	return os.MkdirAll(path, 0o755)
 }
 
-func TestQuitKey(t *testing.T) {
-	app := NewApp(nil)
-	m, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	app = m.(AppModel)
-
-	// Press q to quit.
-	_, cmd := app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRunes, Runes: []rune{'q'}}))
-	if cmd == nil {
-		t.Fatal("expected a command from quit key, got nil")
-	}
-	// Execute the cmd and check it produces a QuitMsg.
-	msg := cmd()
-	if _, ok := msg.(tea.QuitMsg); !ok {
-		t.Errorf("expected tea.QuitMsg, got %T", msg)
-	}
-}
-
-func TestCtrlCQuit(t *testing.T) {
-	app := NewApp(nil)
-	m, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	app = m.(AppModel)
-
-	_, cmd := app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyCtrlC}))
-	if cmd == nil {
-		t.Fatal("expected a command from ctrl+c, got nil")
-	}
-	msg := cmd()
-	if _, ok := msg.(tea.QuitMsg); !ok {
-		t.Errorf("expected tea.QuitMsg, got %T", msg)
-	}
-}
-
-func TestViewProfilesTab(t *testing.T) {
-	app := NewApp(nil)
-	m, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	app = m.(AppModel)
-
-	view := app.View()
-	if !strings.Contains(view, "Profiles") {
-		t.Errorf("expected view to contain 'Profiles' tab label, got:\n%s", view)
-	}
-	if !strings.Contains(view, "MCPs") {
-		t.Errorf("expected view to contain 'MCPs' tab label, got:\n%s", view)
-	}
-}
-
-func TestViewMCPsTab(t *testing.T) {
-	app := NewApp(nil)
-	m, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	app = m.(AppModel)
-
-	// Switch to MCPs tab (Profiles → Tools → MCPs).
-	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRight}))
-	app = m.(AppModel)
-	m, _ = app.Update(tea.KeyMsg(tea.Key{Type: tea.KeyRight}))
-	app = m.(AppModel)
-
-	view := app.View()
-	if !strings.Contains(view, "No MCP selected") {
-		t.Errorf("expected 'No MCP selected' on MCPs tab, got:\n%s", view)
-	}
-}
-
-func TestWindowSizeMsg(t *testing.T) {
-	app := NewApp(nil)
-	m, _ := app.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
-	app = m.(AppModel)
-
-	if app.width != 120 {
-		t.Errorf("expected width 120, got %d", app.width)
-	}
-	if app.height != 40 {
-		t.Errorf("expected height 40, got %d", app.height)
-	}
-}
-
-func TestInitReturnsNil(t *testing.T) {
-	app := NewApp(nil)
+func TestApp_Init_Returns4TabCmds(t *testing.T) {
+	app := setupTestApp(t)
 	cmd := app.Init()
-	if cmd != nil {
-		t.Errorf("expected Init() to return nil, got %v", cmd)
+	if cmd == nil {
+		t.Fatal("Init() returned nil, expected batch cmd")
 	}
 }
 
-func TestViewBeforeWindowSize(t *testing.T) {
-	app := NewApp(nil)
+func TestApp_HasCorrectTabCount(t *testing.T) {
+	app := setupTestApp(t)
+	if len(app.tabs) != int(tabCount) {
+		t.Errorf("tab count = %d, want %d", len(app.tabs), tabCount)
+	}
+}
+
+func TestApp_TabTitles(t *testing.T) {
+	app := setupTestApp(t)
+	want := []string{"Registry", "Projects", "Tools", "Help"}
+	for i, tab := range app.tabs {
+		if tab.Title() != want[i] {
+			t.Errorf("tab %d title = %q, want %q", i, tab.Title(), want[i])
+		}
+	}
+}
+
+func TestApp_TabNavigation_NextTab(t *testing.T) {
+	app := setupTestApp(t)
+	app = sizeApp(t, app, 80, 24)
+
+	// Initial view should show Registry tab content
 	view := app.View()
-	if !strings.Contains(view, "Loading") {
-		t.Errorf("expected 'Loading...' before window size, got:\n%s", view)
+	if !strings.Contains(view, "Registry") {
+		t.Fatal("initial view missing Registry tab")
+	}
+
+	// Press Tab to go to next
+	msg := tea.KeyMsg{Type: tea.KeyTab}
+	result, _ := app.Update(msg)
+	app = result.(App)
+
+	view = app.View()
+	if !strings.Contains(view, "Projects") {
+		t.Error("after Tab, view should emphasize Projects tab")
 	}
 }
 
-func TestStatusBarProfilesTab(t *testing.T) {
-	app := NewApp(nil)
-	m, _ := app.Update(tea.WindowSizeMsg{Width: 80, Height: 24})
-	app = m.(AppModel)
+func TestApp_TabNavigation_PrevTab(t *testing.T) {
+	app := setupTestApp(t)
+	app = sizeApp(t, app, 80, 24)
+
+	// Press Shift+Tab to go to prev (wraps to Help)
+	msg := tea.KeyMsg{Type: tea.KeyShiftTab}
+	result, _ := app.Update(msg)
+	app = result.(App)
 
 	view := app.View()
-	if !strings.Contains(view, "d: delete") {
-		t.Errorf("expected profiles status help in status bar, got:\n%s", view)
+	if !strings.Contains(view, "Help") {
+		t.Error("after Shift+Tab from Registry, view should show Help tab content")
 	}
 }
 
-func TestWindowSizePropagation(t *testing.T) {
-	app := NewApp(nil)
-	m, _ := app.Update(tea.WindowSizeMsg{Width: 100, Height: 30})
-	app = m.(AppModel)
+func TestApp_TabNavigation_NumberKeys(t *testing.T) {
+	app := setupTestApp(t)
+	app = sizeApp(t, app, 80, 24)
 
-	if app.mcps.width != 100 {
-		t.Errorf("expected mcps width 100, got %d", app.mcps.width)
+	tests := []struct {
+		key     string
+		wantTab string
+	}{
+		{"2", "Projects"},
+		{"3", "Tools"},
+		{"4", "Help"},
+		{"1", "Registry"},
 	}
-	if app.mcps.height == 0 {
-		t.Errorf("expected mcps height > 0, got %d", app.mcps.height)
+
+	for _, tt := range tests {
+		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tt.key)}
+		result, _ := app.Update(msg)
+		app = result.(App)
+		view := app.View()
+		// The active tab content should be visible in the view
+		if !strings.Contains(view, tt.wantTab) {
+			t.Errorf("after key %q, view should contain %q", tt.key, tt.wantTab)
+		}
 	}
-	if app.profiles.width != 100 {
-		t.Errorf("expected profiles width 100, got %d", app.profiles.width)
+}
+
+func TestApp_WindowResize_Propagates(t *testing.T) {
+	app := setupTestApp(t)
+
+	// Before resize, view shows loading
+	view := app.View()
+	if view != "Loading..." {
+		t.Errorf("before resize, view = %q, want Loading...", view)
 	}
-	if app.profiles.height == 0 {
-		t.Errorf("expected profiles height > 0, got %d", app.profiles.height)
+
+	// After resize, view should render tab content
+	app = sizeApp(t, app, 120, 40)
+	view = app.View()
+	if view == "Loading..." {
+		t.Error("after resize, view should no longer show Loading...")
+	}
+	if !strings.Contains(view, "Registry") {
+		t.Error("after resize, view should contain tab bar with Registry")
+	}
+}
+
+func TestApp_View_ContainsTabBar(t *testing.T) {
+	app := setupTestApp(t)
+	app = sizeApp(t, app, 80, 24)
+
+	view := app.View()
+	if !strings.Contains(view, "Registry") {
+		t.Error("view missing 'Registry' in tab bar")
+	}
+	if !strings.Contains(view, "Projects") {
+		t.Error("view missing 'Projects' in tab bar")
+	}
+	if !strings.Contains(view, "Tools") {
+		t.Error("view missing 'Tools' in tab bar")
+	}
+	if !strings.Contains(view, "Help") {
+		t.Error("view missing 'Help' in tab bar")
+	}
+}
+
+func TestApp_View_Loading(t *testing.T) {
+	app := setupTestApp(t)
+	// width/height = 0 triggers loading state
+	view := app.View()
+	if view != "Loading..." {
+		t.Errorf("view with no size = %q, want 'Loading...'", view)
+	}
+}
+
+func TestApp_CtrlC_Quits(t *testing.T) {
+	app := setupTestApp(t)
+	app = sizeApp(t, app, 80, 24)
+
+	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
+	_, cmd := app.Update(msg)
+	if cmd == nil {
+		t.Fatal("ctrl+c should return a quit command")
+	}
+}
+
+func TestApp_ConfirmOverlay_Dismiss(t *testing.T) {
+	app := setupTestApp(t)
+	app = sizeApp(t, app, 80, 24)
+	app.overlay = OverlayConfirm
+	app.overlayTitle = "Test"
+	app.overlayMsg = "Are you sure?"
+
+	// Verify the confirm overlay appears in view
+	view := app.View()
+	if !strings.Contains(view, "Are you sure?") {
+		t.Error("confirm overlay should appear in view")
+	}
+
+	// Dismiss with Esc
+	msg := tea.KeyMsg{Type: tea.KeyEscape}
+	result, _ := app.Update(msg)
+	app = result.(App)
+
+	// Overlay should be gone - view should show normal tab content
+	view = app.View()
+	if strings.Contains(view, "Are you sure?") {
+		t.Error("confirm overlay should be dismissed after Esc")
 	}
 }

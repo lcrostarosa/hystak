@@ -1,7 +1,10 @@
 package model
 
-// TemplateDef represents a CLAUDE.md template in the registry.
+// TemplateDef is a CLAUDE.md template definition stored in the registry.
 type TemplateDef struct {
-	Name   string `yaml:"-"`
-	Source string `yaml:"source"` // path to .md template file
+	Name   string `yaml:"name,omitempty"`
+	Source string `yaml:"source"`
 }
+
+func (t *TemplateDef) ResourceName() string     { return t.Name }
+func (t *TemplateDef) SetResourceName(n string) { t.Name = n }

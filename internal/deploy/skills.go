@@ -1,159 +1,167 @@
 package deploy
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 
-	"github.com/lcrostarosa/hystak/internal/model"
+	"github.com/hystak/hystak/internal/model"
 )
 
-const legacyManagedSkillsMarker = ".hystak-managed"
+// Compile-time interface check.
+var _ ResourceDeployer = (*SkillsDeployer)(nil)
 
-// SkillsDeployer syncs skill files to .claude/skills/<name>/SKILL.md using symlinks.
+// SkillsDeployer deploys skills as symlinks to .claude/skills/<name>/SKILL.md (S-043).
+// Symlinks are managed by hystak; regular files are user-owned and not overwritten.
 type SkillsDeployer struct{}
 
-// SyncSkills creates symlinks for each skill and removes stale managed symlinks.
-// Unmanaged skill directories (containing regular files, not symlinks) are preserved.
-func (d *SkillsDeployer) SyncSkills(projectPath string, skills []model.SkillDef) error {
+func (d *SkillsDeployer) Kind() ResourceDeployerKind {
+	return ResourceDeployerSkills
+}
+
+// Sync creates or updates symlinks for each skill, and removes stale ones.
+func (d *SkillsDeployer) Sync(projectPath string, config DeployConfig) error {
 	skillsDir := filepath.Join(projectPath, ".claude", "skills")
-
-	// Migrate from legacy marker-based tracking if present.
-	d.migrateLegacyMarker(skillsDir)
-
-	if len(skills) == 0 {
-		return d.cleanStaleSkills(skillsDir, nil)
-	}
-
 	if err := os.MkdirAll(skillsDir, 0o755); err != nil {
 		return fmt.Errorf("creating skills directory: %w", err)
 	}
 
-	currentSet := make(map[string]bool, len(skills))
-	for _, skill := range skills {
-		currentSet[skill.Name] = true
-
-		source := expandHome(skill.Source)
-		if _, err := os.Stat(source); err != nil {
-			return fmt.Errorf("skill source %q does not exist: %w", source, err)
-		}
-
-		skillDir := filepath.Join(skillsDir, skill.Name)
-		if err := os.MkdirAll(skillDir, 0o755); err != nil {
-			return fmt.Errorf("creating skill directory %q: %w", skill.Name, err)
-		}
-
-		target := filepath.Join(skillDir, "SKILL.md")
-
-		// If a symlink already exists, check if it points to the right source.
-		if info, err := os.Lstat(target); err == nil {
-			if info.Mode()&os.ModeSymlink != 0 {
-				existing, err := os.Readlink(target)
-				if err == nil && existing == source {
-					continue // already correct
-				}
-				// Wrong target — remove and recreate.
-				_ = os.Remove(target)
-			} else {
-				// Regular file — this is a conflict (legacy copy or user-owned).
-				// Replace legacy copies (from old marker-based deploys).
-				_ = os.Remove(target)
-			}
-		}
-
-		if err := os.Symlink(source, target); err != nil {
-			return fmt.Errorf("creating symlink for skill %q: %w", skill.Name, err)
+	// Build set of expected skill names
+	expected := make(map[string]bool, len(config.Skills))
+	for _, skill := range config.Skills {
+		expected[skill.Name] = true
+		if err := d.deploySkill(skillsDir, skill); err != nil {
+			return fmt.Errorf("deploying skill %q: %w", skill.Name, err)
 		}
 	}
 
-	return d.cleanStaleSkills(skillsDir, currentSet)
+	// Remove stale symlinks (managed by hystak, not in expected set)
+	return d.removeStale(skillsDir, expected)
 }
 
-// cleanStaleSkills removes skill directories not in the current set.
-// Both symlinked (hystak-managed) and regular-file skills are removed
-// if they are not selected in the active profile.
-func (d *SkillsDeployer) cleanStaleSkills(skillsDir string, current map[string]bool) error {
+func (d *SkillsDeployer) deploySkill(skillsDir string, skill model.SkillDef) error {
+	dir := filepath.Join(skillsDir, skill.Name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+
+	linkPath := filepath.Join(dir, "SKILL.md")
+	target := skill.Source
+
+	// Check existing
+	info, err := os.Lstat(linkPath)
+	switch {
+	case err == nil:
+		// Exists — if it's a symlink, update it; if regular file, skip (user-owned)
+		if info.Mode()&os.ModeSymlink == 0 {
+			return nil // user-owned regular file, don't overwrite
+		}
+		// Remove old symlink to replace
+		if err := os.Remove(linkPath); err != nil {
+			return err
+		}
+	case errors.Is(err, fs.ErrNotExist):
+		// doesn't exist, will create
+	default:
+		return err
+	}
+
+	if err := validateSymlinkTarget(target); err != nil {
+		return err
+	}
+	return os.Symlink(target, linkPath)
+}
+
+func (d *SkillsDeployer) removeStale(skillsDir string, expected map[string]bool) error {
 	entries, err := os.ReadDir(skillsDir)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return fmt.Errorf("reading skills directory: %w", err)
+		return err
 	}
 
-	for _, entry := range entries {
-		if !entry.IsDir() {
+	for _, e := range entries {
+		if !e.IsDir() {
 			continue
 		}
-		name := entry.Name()
-		if current[name] {
+		name := e.Name()
+		if expected[name] {
 			continue
 		}
-
-		// Remove any skill directory not in the current set.
-		skillFile := filepath.Join(skillsDir, name, "SKILL.md")
-		if _, err := os.Stat(skillFile); err == nil {
-			_ = os.RemoveAll(filepath.Join(skillsDir, name))
+		// Check if SKILL.md is a symlink (managed by hystak)
+		linkPath := filepath.Join(skillsDir, name, "SKILL.md")
+		info, err := os.Lstat(linkPath)
+		if err != nil {
+			if errors.Is(err, fs.ErrNotExist) {
+				continue // no SKILL.md, skip
+			}
+			return err
 		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			continue // regular file, user-owned
+		}
+		// Remove managed symlink and empty directory
+		if err := os.Remove(linkPath); err != nil {
+			return err
+		}
+		// Try removing the directory (only succeeds if empty)
+		_ = os.Remove(filepath.Join(skillsDir, name))
 	}
-
 	return nil
 }
 
-// migrateLegacyMarker reads the old .hystak-managed marker file and removes
-// file-copied skill directories that it tracked (they'll be re-created as symlinks
-// if still in the current skill list). Deletes the marker afterward.
-func (d *SkillsDeployer) migrateLegacyMarker(skillsDir string) {
-	markerPath := filepath.Join(skillsDir, legacyManagedSkillsMarker)
-	names, err := readLines(markerPath)
-	if err != nil {
-		return // no marker, nothing to migrate
-	}
-
-	for _, name := range names {
-		skillFile := filepath.Join(skillsDir, name, "SKILL.md")
-		// Only remove if it's a regular file (legacy copy), not a symlink.
-		info, err := os.Lstat(skillFile)
+// Preflight checks for conflicts — regular files at SKILL.md paths.
+func (d *SkillsDeployer) Preflight(projectPath string, config DeployConfig) []PreflightConflict {
+	var conflicts []PreflightConflict
+	for _, skill := range config.Skills {
+		linkPath := filepath.Join(projectPath, ".claude", "skills", skill.Name, "SKILL.md")
+		info, err := os.Lstat(linkPath)
 		if err != nil {
 			continue
 		}
 		if info.Mode()&os.ModeSymlink == 0 {
-			_ = os.RemoveAll(filepath.Join(skillsDir, name))
+			conflicts = append(conflicts, PreflightConflict{
+				Path:    linkPath,
+				Kind:    ResourceDeployerSkills,
+				Message: fmt.Sprintf("skill %q: regular file exists at %s (not a symlink)", skill.Name, linkPath),
+			})
 		}
-	}
-
-	_ = os.Remove(markerPath)
-}
-
-// PreflightSkills checks for skill conflicts before deployment.
-// Returns conflicts for skills that exist as regular files (not symlinks) in the project.
-func (d *SkillsDeployer) PreflightSkills(projectPath string, skills []model.SkillDef) []PreflightConflict {
-	skillsDir := filepath.Join(projectPath, ".claude", "skills")
-
-	var conflicts []PreflightConflict
-	for _, skill := range skills {
-		target := filepath.Join(skillsDir, skill.Name, "SKILL.md")
-		info, err := os.Lstat(target)
-		if err != nil {
-			continue // doesn't exist, no conflict
-		}
-		// Symlinks are managed by hystak — no conflict.
-		if info.Mode()&os.ModeSymlink != 0 {
-			continue
-		}
-		// Regular file exists — conflict.
-		conflicts = append(conflicts, PreflightConflict{
-			ResourceType: "skill",
-			Name:         skill.Name,
-			ExistingPath: target,
-		})
 	}
 	return conflicts
 }
 
-// IsSkillManaged returns true if the skill at the given project path is managed
-// by hystak (deployed as a symlink).
-func (d *SkillsDeployer) IsSkillManaged(projectPath, skillName string) bool {
-	skillFile := filepath.Join(projectPath, ".claude", "skills", skillName, "SKILL.md")
-	return isSymlink(skillFile)
+// ReadDeployed reads currently deployed skills by scanning symlinks.
+func (d *SkillsDeployer) ReadDeployed(projectPath string) (DeployConfig, error) {
+	skillsDir := filepath.Join(projectPath, ".claude", "skills")
+	entries, err := os.ReadDir(skillsDir)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return DeployConfig{}, nil
+		}
+		return DeployConfig{}, err
+	}
+
+	var skills []model.SkillDef
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		linkPath := filepath.Join(skillsDir, e.Name(), "SKILL.md")
+		info, err := os.Lstat(linkPath)
+		if err != nil {
+			continue
+		}
+		if info.Mode()&os.ModeSymlink == 0 {
+			continue // not managed
+		}
+		target, err := os.Readlink(linkPath)
+		if err != nil {
+			continue
+		}
+		skills = append(skills, model.SkillDef{
+			Name:   e.Name(),
+			Source: target,
+		})
+	}
+	return DeployConfig{Skills: skills}, nil
 }

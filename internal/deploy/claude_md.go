@@ -1,188 +1,197 @@
 package deploy
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/hystak/hystak/internal/config"
 )
 
-const legacyHystakSentinel = "<!-- managed by hystak -->"
+// managedSentinel marks a CLAUDE.md file as managed by hystak.
+const managedSentinel = "<!-- managed by hystak -->"
 
-// ClaudeMDDeployer creates a symlink or composed file for CLAUDE.md in the project root.
+// Compile-time interface check.
+var _ ResourceDeployer = (*ClaudeMDDeployer)(nil)
+
+// ClaudeMDDeployer deploys CLAUDE.md to the project root (S-045).
+// Template only = symlink. Template + prompts = composed file with sentinel.
+// User-owned CLAUDE.md (no sentinel) is never overwritten.
 type ClaudeMDDeployer struct{}
 
-// PreflightClaudeMD checks if CLAUDE.md exists and is not managed by hystak.
-// Returns a conflict if CLAUDE.md is a regular file that hystak didn't place.
-func (d *ClaudeMDDeployer) PreflightClaudeMD(projectPath string) *PreflightConflict {
-	target := filepath.Join(projectPath, "CLAUDE.md")
-
-	info, err := os.Lstat(target)
-	if err != nil {
-		return nil // doesn't exist, no conflict
-	}
-
-	// Symlink = managed by hystak, no conflict.
-	if info.Mode()&os.ModeSymlink != 0 {
-		return nil
-	}
-
-	// Regular file — check for sentinel (also managed).
-	content, err := os.ReadFile(target)
-	if err != nil {
-		return nil
-	}
-	if strings.HasPrefix(string(content), legacyHystakSentinel) {
-		return nil // managed file, no conflict
-	}
-
-	return &PreflightConflict{
-		ResourceType: "claude_md",
-		Name:         "CLAUDE.md",
-		ExistingPath: target,
-	}
+func (d *ClaudeMDDeployer) Kind() ResourceDeployerKind {
+	return ResourceDeployerClaudeMD
 }
 
-// SyncClaudeMD deploys CLAUDE.md to the project root.
-//
-// When promptSources is empty, the template is deployed as a symlink (original behavior).
-// When promptSources is non-empty, a composed file is generated with sentinel header,
-// template content (if any), and prompt fragment contents in order.
-// Regular files (user-owned) are never overwritten unless they have the managed sentinel.
-func (d *ClaudeMDDeployer) SyncClaudeMD(projectPath, templateSource string, promptSources []string) error {
-	if templateSource == "" && len(promptSources) == 0 {
-		return nil
+// Sync deploys CLAUDE.md to the project root.
+func (d *ClaudeMDDeployer) Sync(projectPath string, cfg DeployConfig) error {
+	path := filepath.Join(projectPath, "CLAUDE.md")
+
+	// No template and no prompts: remove managed file if present
+	if cfg.TemplateSource == "" && len(cfg.PromptSources) == 0 {
+		return d.removeIfManaged(path)
 	}
 
-	// Composition mode: generate a file from template + prompts.
-	if len(promptSources) > 0 {
-		return d.syncComposed(projectPath, templateSource, promptSources)
+	// Template only, no prompts: symlink mode
+	if cfg.TemplateSource != "" && len(cfg.PromptSources) == 0 {
+		return d.deploySymlink(path, cfg.TemplateSource)
 	}
 
-	// Symlink mode: template only, no prompts.
-	return d.syncSymlink(projectPath, templateSource)
+	// Template + prompts (or prompts only): composed mode
+	return d.deployComposed(path, cfg.TemplateSource, cfg.PromptSources)
 }
 
-// syncSymlink deploys a template as a symlink (original behavior).
-func (d *ClaudeMDDeployer) syncSymlink(projectPath, templateSource string) error {
-	source := expandHome(templateSource)
-	if _, err := os.Stat(source); err != nil {
-		return fmt.Errorf("template source %q does not exist: %w", source, err)
-	}
-
-	target := filepath.Join(projectPath, "CLAUDE.md")
-
-	info, err := os.Lstat(target)
-	if err == nil {
+func (d *ClaudeMDDeployer) deploySymlink(path, target string) error {
+	info, err := os.Lstat(path)
+	switch {
+	case err == nil:
 		if info.Mode()&os.ModeSymlink != 0 {
-			// Existing symlink — check if it already points to the right source.
-			existing, err := os.Readlink(target)
-			if err == nil && existing == source {
-				return nil // already correct
+			// Existing symlink — remove and replace
+			if err := os.Remove(path); err != nil {
+				return err
 			}
-			// Wrong target — remove and recreate.
-			_ = os.Remove(target)
 		} else {
-			// Regular file — check for managed sentinel.
-			content, err := os.ReadFile(target)
-			if err != nil {
-				return fmt.Errorf("reading existing CLAUDE.md: %w", err)
+			// Regular file — check if managed
+			if !d.isManaged(path) {
+				return nil // user-owned, don't overwrite
 			}
-			if strings.HasPrefix(string(content), legacyHystakSentinel) {
-				// Managed file — replace with symlink.
-				_ = os.Remove(target)
-			} else {
-				// User-owned file — leave it alone.
-				return nil
+			if err := os.Remove(path); err != nil {
+				return err
 			}
 		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("checking existing CLAUDE.md: %w", err)
+	case errors.Is(err, fs.ErrNotExist):
+		// will create
+	default:
+		return err
 	}
 
-	if err := os.Symlink(source, target); err != nil {
-		return fmt.Errorf("creating CLAUDE.md symlink: %w", err)
+	if err := validateSymlinkTarget(target); err != nil {
+		return err
 	}
-
-	return nil
+	return os.Symlink(target, path)
 }
 
-// syncComposed generates CLAUDE.md from template + prompt fragments.
-func (d *ClaudeMDDeployer) syncComposed(projectPath, templateSource string, promptSources []string) error {
-	var buf strings.Builder
-	buf.WriteString(legacyHystakSentinel)
-	buf.WriteString("\n\n")
+func (d *ClaudeMDDeployer) deployComposed(path, templateSource string, promptSources []string) error {
+	// Check if user-owned
+	info, err := os.Lstat(path)
+	if err == nil {
+		if info.Mode()&os.ModeSymlink != 0 {
+			// Remove existing symlink to replace with composed file
+			if err := os.Remove(path); err != nil {
+				return err
+			}
+		} else if !d.isManaged(path) {
+			return nil // user-owned, don't overwrite
+		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
 
-	// Include template content if set.
+	var b strings.Builder
+	b.WriteString(managedSentinel + "\n\n")
+
+	// Include template content
 	if templateSource != "" {
-		source := expandHome(templateSource)
-		content, err := os.ReadFile(source)
+		content, err := os.ReadFile(templateSource)
 		if err != nil {
-			return fmt.Errorf("reading template source %q: %w", source, err)
+			return fmt.Errorf("reading template %q: %w", templateSource, err)
 		}
-		buf.Write(content)
-		buf.WriteString("\n\n")
+		b.Write(content)
+		b.WriteString("\n\n")
 	}
 
-	// Append each prompt fragment.
-	for _, ps := range promptSources {
-		source := expandHome(ps)
-		content, err := os.ReadFile(source)
+	// Include prompt fragments
+	for _, src := range promptSources {
+		content, err := os.ReadFile(src)
 		if err != nil {
-			return fmt.Errorf("reading prompt source %q: %w", source, err)
+			return fmt.Errorf("reading prompt %q: %w", src, err)
 		}
-		buf.Write(content)
-		buf.WriteString("\n\n")
+		b.WriteString("---\n\n")
+		b.Write(content)
+		b.WriteString("\n\n")
 	}
 
-	composed := buf.String()
-	target := filepath.Join(projectPath, "CLAUDE.md")
-
-	// Handle existing file at target.
-	info, err := os.Lstat(target)
-	if err == nil {
-		if info.Mode()&os.ModeSymlink != 0 {
-			// Previous symlink — remove to write composed file.
-			_ = os.Remove(target)
-		} else {
-			// Regular file — check for managed sentinel.
-			existing, err := os.ReadFile(target)
-			if err != nil {
-				return fmt.Errorf("reading existing CLAUDE.md: %w", err)
-			}
-			if !strings.HasPrefix(string(existing), legacyHystakSentinel) {
-				// User-owned file — leave it alone.
-				return nil
-			}
-			// Managed file — check if content is already correct.
-			if string(existing) == composed {
-				return nil // already up to date
-			}
-			// Will overwrite below.
-		}
-	} else if !os.IsNotExist(err) {
-		return fmt.Errorf("checking existing CLAUDE.md: %w", err)
-	}
-
-	if err := os.WriteFile(target, []byte(composed), 0o644); err != nil {
-		return fmt.Errorf("writing composed CLAUDE.md: %w", err)
-	}
-
-	return nil
+	return config.AtomicWrite(path, []byte(b.String()), 0o644)
 }
 
-// IsClaudeMDManaged returns true if project/CLAUDE.md is managed by hystak
-// (deployed as a symlink or as a generated file with the managed sentinel).
-func (d *ClaudeMDDeployer) IsClaudeMDManaged(projectPath string) bool {
-	target := filepath.Join(projectPath, "CLAUDE.md")
-
-	if isSymlink(target) {
-		return true
+func (d *ClaudeMDDeployer) removeIfManaged(path string) error {
+	info, err := os.Lstat(path)
+	switch {
+	case err == nil:
+		if info.Mode()&os.ModeSymlink != 0 {
+			return os.Remove(path) // symlink = managed
+		}
+		if d.isManaged(path) {
+			return os.Remove(path) // has sentinel = managed
+		}
+		return nil // user-owned, leave it
+	case errors.Is(err, fs.ErrNotExist):
+		return nil
+	default:
+		return err
 	}
+}
 
-	content, err := os.ReadFile(target)
+// isManaged checks whether a CLAUDE.md file contains the managed sentinel.
+func (d *ClaudeMDDeployer) isManaged(path string) bool {
+	data, err := os.ReadFile(path)
 	if err != nil {
 		return false
 	}
-	return strings.HasPrefix(string(content), legacyHystakSentinel)
+	return strings.HasPrefix(string(data), managedSentinel)
+}
+
+// Preflight checks for user-owned CLAUDE.md (no sentinel, not a symlink).
+func (d *ClaudeMDDeployer) Preflight(projectPath string, cfg DeployConfig) []PreflightConflict {
+	if cfg.TemplateSource == "" && len(cfg.PromptSources) == 0 {
+		return nil
+	}
+	path := filepath.Join(projectPath, "CLAUDE.md")
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil
+	}
+	// Symlinks are not conflicts (S-048)
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil
+	}
+	// Check for sentinel
+	if d.isManaged(path) {
+		return nil
+	}
+	return []PreflightConflict{{
+		Path:    path,
+		Kind:    ResourceDeployerClaudeMD,
+		Message: "CLAUDE.md exists and is not managed by hystak (no sentinel marker)",
+	}}
+}
+
+// ReadDeployed reads the current CLAUDE.md state.
+func (d *ClaudeMDDeployer) ReadDeployed(projectPath string) (DeployConfig, error) {
+	path := filepath.Join(projectPath, "CLAUDE.md")
+	info, err := os.Lstat(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return DeployConfig{}, nil
+		}
+		return DeployConfig{}, err
+	}
+
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, err := os.Readlink(path)
+		if err != nil {
+			return DeployConfig{}, err
+		}
+		return DeployConfig{TemplateSource: target}, nil
+	}
+
+	// Composed file — just report that it exists
+	if d.isManaged(path) {
+		return DeployConfig{TemplateSource: "(composed)"}, nil
+	}
+
+	return DeployConfig{}, nil
 }

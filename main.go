@@ -1,13 +1,13 @@
 package main
 
-import "github.com/lcrostarosa/hystak/internal/cli"
+import (
+	"os"
 
-var (
-	version = "dev"
-	commit  = "none"
-	date    = "unknown"
+	"github.com/hystak/hystak/internal/cli"
 )
 
 func main() {
-	cli.Execute(version, commit, date)
+	if err := cli.Execute(); err != nil {
+		os.Exit(1)
+	}
 }

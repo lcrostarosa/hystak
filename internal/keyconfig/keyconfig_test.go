@@ -3,188 +3,170 @@ package keyconfig
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
+
+	hysterr "github.com/hystak/hystak/internal/errors"
 )
 
-func TestPresetArrows(t *testing.T) {
-	r, err := Preset(ProfileArrows)
-	if err != nil {
-		t.Fatal(err)
+func TestProfile_Valid(t *testing.T) {
+	tests := []struct {
+		name  string
+		value Profile
+		want  bool
+	}{
+		{"arrows", ProfileArrows, true},
+		{"vim", ProfileVim, true},
+		{"classic", ProfileClassic, true},
+		{"empty", Profile(""), false},
+		{"unknown", Profile("emacs"), false},
 	}
-	if got := r.Global.TabNext; len(got) != 1 || got[0] != "right" {
-		t.Errorf("arrows TabNext = %v, want [right]", got)
-	}
-	if got := r.Global.TabPrev; len(got) != 1 || got[0] != "left" {
-		t.Errorf("arrows TabPrev = %v, want [left]", got)
-	}
-}
-
-func TestPresetVim(t *testing.T) {
-	r, err := Preset(ProfileVim)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := r.Global.TabNext; len(got) != 1 || got[0] != "l" {
-		t.Errorf("vim TabNext = %v, want [l]", got)
-	}
-	if got := r.Global.TabPrev; len(got) != 1 || got[0] != "h" {
-		t.Errorf("vim TabPrev = %v, want [h]", got)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.value.Valid(); got != tt.want {
+				t.Errorf("Profile(%q).Valid() = %v, want %v", tt.value, got, tt.want)
+			}
+		})
 	}
 }
 
-func TestPresetClassic(t *testing.T) {
-	r, err := Preset(ProfileClassic)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got := r.Global.TabNext; len(got) != 1 || got[0] != "tab" {
-		t.Errorf("classic TabNext = %v, want [tab]", got)
-	}
-}
-
-func TestPresetUnknown(t *testing.T) {
-	_, err := Preset("nonexistent")
-	if err == nil {
-		t.Error("expected error for unknown preset")
-	}
-}
-
-func TestPresetEmpty(t *testing.T) {
-	r, err := Preset("")
-	if err != nil {
-		t.Fatal(err)
-	}
-	// Empty string falls back to arrows.
-	if got := r.Global.TabNext; len(got) != 1 || got[0] != "right" {
-		t.Errorf("empty preset TabNext = %v, want [right]", got)
-	}
-}
-
-func TestLoadMissing(t *testing.T) {
-	cfg, err := Load(filepath.Join(t.TempDir(), "missing.yaml"))
-	if err != nil {
-		t.Fatal(err)
-	}
+func TestDefaultConfig(t *testing.T) {
+	cfg := DefaultConfig()
 	if cfg.Profile != ProfileArrows {
-		t.Errorf("missing file profile = %q, want %q", cfg.Profile, ProfileArrows)
+		t.Errorf("Profile = %q, want arrows", cfg.Profile)
 	}
 }
 
-func TestLoadEmpty(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "keys.yaml")
-	if err := os.WriteFile(p, nil, 0o644); err != nil {
-		t.Fatal(err)
+func TestConfig_ResolvedBindings_DefaultProfile(t *testing.T) {
+	cfg := Config{Profile: ProfileArrows}
+	bindings := cfg.ResolvedBindings()
+
+	if bindings["list_up"][0] != "Up" {
+		t.Errorf("arrows list_up = %v, want [Up]", bindings["list_up"])
 	}
-	cfg, err := Load(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if cfg.Profile != ProfileArrows {
-		t.Errorf("empty file profile = %q, want %q", cfg.Profile, ProfileArrows)
+	if bindings["list_down"][0] != "Down" {
+		t.Errorf("arrows list_down = %v, want [Down]", bindings["list_down"])
 	}
 }
 
-func TestLoadValid(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "keys.yaml")
-	content := `profile: vim
-overrides:
-  global:
-    quit: ["q"]
-`
-	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
-		t.Fatal(err)
+func TestConfig_ResolvedBindings_VimProfile(t *testing.T) {
+	cfg := Config{Profile: ProfileVim}
+	bindings := cfg.ResolvedBindings()
+
+	if bindings["list_up"][0] != "k" {
+		t.Errorf("vim list_up = %v, want [k]", bindings["list_up"])
 	}
-	cfg, err := Load(p)
-	if err != nil {
-		t.Fatal(err)
+	if bindings["list_down"][0] != "j" {
+		t.Errorf("vim list_down = %v, want [j]", bindings["list_down"])
 	}
-	if cfg.Profile != ProfileVim {
-		t.Errorf("profile = %q, want %q", cfg.Profile, ProfileVim)
-	}
-	if len(cfg.Overrides.Global.Quit) != 1 || cfg.Overrides.Global.Quit[0] != "q" {
-		t.Errorf("overrides quit = %v, want [q]", cfg.Overrides.Global.Quit)
+	// Vim next_tab should have both Tab and l
+	if len(bindings["next_tab"]) != 2 {
+		t.Errorf("vim next_tab = %v, want 2 keys", bindings["next_tab"])
 	}
 }
 
-func TestLoadMalformed(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "keys.yaml")
-	if err := os.WriteFile(p, []byte("{{invalid yaml"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	_, err := Load(p)
-	if err == nil {
-		t.Error("expected error for malformed YAML")
-	}
-}
-
-func TestResolveWithOverrides(t *testing.T) {
+func TestConfig_ResolvedBindings_UserOverride(t *testing.T) {
 	cfg := Config{
 		Profile: ProfileArrows,
-		Overrides: Overrides{
-			Global: GlobalKeys{
-				Quit: []string{"ctrl+q"},
-			},
-			MCPs: ResourceTabKeys{
-				Add: []string{"n"},
-			},
+		Bindings: Bindings{
+			"list_up": {"w"},
 		},
 	}
-	r, err := Resolve(cfg)
-	if err != nil {
-		t.Fatal(err)
+	bindings := cfg.ResolvedBindings()
+
+	if !reflect.DeepEqual(bindings["list_up"], []string{"w"}) {
+		t.Errorf("list_up = %v, want [w] (user override)", bindings["list_up"])
 	}
-	// Quit should be overridden.
-	if len(r.Global.Quit) != 1 || r.Global.Quit[0] != "ctrl+q" {
-		t.Errorf("quit = %v, want [ctrl+q]", r.Global.Quit)
-	}
-	// TabNext should remain from arrows preset.
-	if len(r.Global.TabNext) != 1 || r.Global.TabNext[0] != "right" {
-		t.Errorf("tab_next = %v, want [right]", r.Global.TabNext)
-	}
-	// MCPs add overridden.
-	if len(r.MCPs.Add) != 1 || r.MCPs.Add[0] != "n" {
-		t.Errorf("mcps add = %v, want [n]", r.MCPs.Add)
-	}
-	// MCPs edit should remain default.
-	if len(r.MCPs.Edit) != 1 || r.MCPs.Edit[0] != "e" {
-		t.Errorf("mcps edit = %v, want [e]", r.MCPs.Edit)
+	// Non-overridden keys should still have defaults
+	if bindings["list_down"][0] != "Down" {
+		t.Errorf("list_down = %v, want [Down] (default preserved)", bindings["list_down"])
 	}
 }
 
-func TestResolveUnknownProfile(t *testing.T) {
-	cfg := Config{Profile: "bad"}
-	_, err := Resolve(cfg)
+func TestConfig_ResolvedBindings_UnknownProfile(t *testing.T) {
+	cfg := Config{Profile: Profile("unknown")}
+	bindings := cfg.ResolvedBindings()
+
+	// Should fall back to arrows
+	if bindings["list_up"][0] != "Up" {
+		t.Errorf("unknown profile list_up = %v, want [Up] (fallback to arrows)", bindings["list_up"])
+	}
+}
+
+func TestSaveLoad_RoundTrip(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "keys.yaml")
+
+	original := Config{
+		Profile: ProfileVim,
+		Bindings: Bindings{
+			"list_up": {"w"},
+		},
+	}
+
+	if err := Save(original, path); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !reflect.DeepEqual(loaded, original) {
+		t.Errorf("round-trip mismatch:\n  got:  %+v\n  want: %+v", loaded, original)
+	}
+}
+
+func TestLoad_NonexistentFile(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "nonexistent.yaml")
+
+	cfg, err := Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Profile != ProfileArrows {
+		t.Errorf("Profile = %q, want arrows (default)", cfg.Profile)
+	}
+}
+
+func TestLoad_MalformedYAML(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "keys.yaml")
+
+	if err := os.WriteFile(path, []byte("profile: [invalid"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := Load(path)
 	if err == nil {
-		t.Error("expected error for unknown profile")
+		t.Fatal("expected error for malformed YAML")
+	}
+	if _, ok := err.(*hysterr.ConfigParseError); !ok {
+		t.Errorf("expected *ConfigParseError, got %T", err)
 	}
 }
 
-func TestSaveAndLoad(t *testing.T) {
-	p := filepath.Join(t.TempDir(), "keys.yaml")
-	cfg := Config{Profile: ProfileVim}
-	if err := Save(p, cfg); err != nil {
-		t.Fatal(err)
+func TestDefaultBindings_AllProfilesHaveSameActions(t *testing.T) {
+	arrowsActions := make(map[string]bool)
+	for action := range defaultBindings[ProfileArrows] {
+		arrowsActions[action] = true
 	}
-	loaded, err := Load(p)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if loaded.Profile != ProfileVim {
-		t.Errorf("roundtrip profile = %q, want %q", loaded.Profile, ProfileVim)
-	}
-}
 
-func TestKeysPath(t *testing.T) {
-	got := KeysPath("/home/user/.hystak")
-	want := "/home/user/.hystak/keys.yaml"
-	if got != want {
-		t.Errorf("KeysPath = %q, want %q", got, want)
-	}
-}
-
-func TestPresetNames(t *testing.T) {
-	names := PresetNames()
-	if len(names) != 3 {
-		t.Errorf("PresetNames() returned %d names, want 3", len(names))
+	for _, profile := range []Profile{ProfileVim, ProfileClassic} {
+		t.Run(string(profile), func(t *testing.T) {
+			bindings := defaultBindings[profile]
+			for action := range arrowsActions {
+				if _, ok := bindings[action]; !ok {
+					t.Errorf("profile %q missing action %q", profile, action)
+				}
+			}
+			for action := range bindings {
+				if !arrowsActions[action] {
+					t.Errorf("profile %q has extra action %q not in arrows", profile, action)
+				}
+			}
+		})
 	}
 }

@@ -3,989 +3,304 @@ package project
 import (
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
-	"github.com/lcrostarosa/hystak/internal/model"
-	"github.com/lcrostarosa/hystak/internal/registry"
+	hysterr "github.com/hystak/hystak/internal/errors"
+	"github.com/hystak/hystak/internal/model"
 )
 
-func TestLoadMissingFile(t *testing.T) {
-	s, err := Load("/nonexistent/projects.yaml")
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
-	}
-	if len(s.Projects) != 0 {
-		t.Fatalf("expected empty store, got %d projects", len(s.Projects))
-	}
-}
-
-func TestLoadEmptyFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "projects.yaml")
-	if err := os.WriteFile(path, []byte(""), 0o644); err != nil {
+func TestStore_Add_Get(t *testing.T) {
+	s := NewStore()
+	p := model.Project{Name: "myproject", Path: "/test/myproject"}
+	if err := s.Add(p); err != nil {
 		t.Fatal(err)
 	}
-	s, err := Load(path)
-	if err != nil {
-		t.Fatalf("expected no error, got %v", err)
+
+	got, ok := s.Get("myproject")
+	if !ok {
+		t.Fatal("Get returned false")
 	}
-	if len(s.Projects) != 0 {
-		t.Fatalf("expected empty store, got %d projects", len(s.Projects))
+	if got.Name != "myproject" || got.Path != "/test/myproject" {
+		t.Errorf("got %+v, want name=myproject path=/test/myproject", got)
 	}
 }
 
-func TestLoadSaveRoundTrip(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "projects.yaml")
+func TestStore_Add_Duplicate(t *testing.T) {
+	s := NewStore()
+	p := model.Project{Name: "myproject", Path: "/test/myproject"}
+	if err := s.Add(p); err != nil {
+		t.Fatal(err)
+	}
+	err := s.Add(p)
+	if err == nil {
+		t.Fatal("expected error for duplicate")
+	}
+	if _, ok := err.(*hysterr.AlreadyExists); !ok {
+		t.Errorf("expected *AlreadyExists, got %T", err)
+	}
+}
 
-	cmd := "custom-npx"
-	s := &Store{
-		Projects: map[string]model.Project{
-			"agents": {
-				Name:    "agents",
-				Path:    "/workspace/agents",
-				Clients: []model.ClientType{model.ClientClaudeCode},
-				Tags:    []string{"core"},
-				MCPs: []model.MCPAssignment{
-					{Name: "qdrant", Overrides: &model.ServerOverride{
-						Env: map[string]string{"COLLECTION_NAME": "agent-context"},
-					}},
-				},
-			},
-			"hystak": {
-				Name:    "hystak",
-				Path:    "/workspace/hystak",
-				Clients: []model.ClientType{model.ClientClaudeCode},
-				MCPs: []model.MCPAssignment{
-					{Name: "github"},
-					{Name: "filesystem"},
-				},
-			},
-		},
+func TestStore_Add_EmptyName(t *testing.T) {
+	s := NewStore()
+	err := s.Add(model.Project{Path: "/test"})
+	if err == nil {
+		t.Fatal("expected error for empty name")
+	}
+	if _, ok := err.(*hysterr.ValidationError); !ok {
+		t.Errorf("expected *ValidationError, got %T", err)
+	}
+}
+
+func TestStore_Add_EmptyPath(t *testing.T) {
+	s := NewStore()
+	err := s.Add(model.Project{Name: "myproject"})
+	if err == nil {
+		t.Fatal("expected error for empty path")
+	}
+	if _, ok := err.(*hysterr.ValidationError); !ok {
+		t.Errorf("expected *ValidationError, got %T", err)
+	}
+}
+
+func TestStore_Get_NotFound(t *testing.T) {
+	s := NewStore()
+	_, ok := s.Get("nonexistent")
+	if ok {
+		t.Error("Get returned true for nonexistent project")
+	}
+}
+
+func TestStore_Update(t *testing.T) {
+	s := NewStore()
+	if err := s.Add(model.Project{Name: "myproject", Path: "/old"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Update(model.Project{Name: "myproject", Path: "/new"}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Get("myproject")
+	if got.Path != "/new" {
+		t.Errorf("Path = %q, want /new", got.Path)
+	}
+}
+
+func TestStore_Update_NotFound(t *testing.T) {
+	s := NewStore()
+	err := s.Update(model.Project{Name: "nonexistent", Path: "/x"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if _, ok := err.(*hysterr.ResourceNotFound); !ok {
+		t.Errorf("expected *ResourceNotFound, got %T", err)
+	}
+}
+
+func TestStore_Delete(t *testing.T) {
+	s := NewStore()
+	if err := s.Add(model.Project{Name: "myproject", Path: "/test"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Delete("myproject"); err != nil {
+		t.Fatal(err)
+	}
+	if s.Len() != 0 {
+		t.Errorf("Len() = %d, want 0", s.Len())
+	}
+}
+
+func TestStore_Delete_NotFound(t *testing.T) {
+	s := NewStore()
+	err := s.Delete("nonexistent")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if _, ok := err.(*hysterr.ResourceNotFound); !ok {
+		t.Errorf("expected *ResourceNotFound, got %T", err)
+	}
+}
+
+func TestStore_List_SortedByName(t *testing.T) {
+	s := NewStore()
+	if err := s.Add(model.Project{Name: "zebra", Path: "/z"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Add(model.Project{Name: "alpha", Path: "/a"}); err != nil {
+		t.Fatal(err)
+	}
+	list := s.List()
+	if len(list) != 2 {
+		t.Fatalf("List() = %d items, want 2", len(list))
+	}
+	if list[0].Name != "alpha" || list[1].Name != "zebra" {
+		t.Errorf("List() not sorted: %v", list)
+	}
+}
+
+func TestStore_SetActiveProfile(t *testing.T) {
+	s := NewStore()
+	if err := s.Add(model.Project{Name: "myproject", Path: "/test"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetActiveProfile("myproject", "dev"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Get("myproject")
+	if got.ActiveProfile != "dev" {
+		t.Errorf("ActiveProfile = %q, want dev", got.ActiveProfile)
+	}
+}
+
+func TestStore_SetActiveProfile_NotFound(t *testing.T) {
+	s := NewStore()
+	err := s.SetActiveProfile("nonexistent", "dev")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestStore_SetManagedMCPs(t *testing.T) {
+	s := NewStore()
+	if err := s.Add(model.Project{Name: "myproject", Path: "/test"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SetManagedMCPs("myproject", []string{"github", "postgres"}); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.Get("myproject")
+	want := []string{"github", "postgres"}
+	if !reflect.DeepEqual(got.ManagedMCPs, want) {
+		t.Errorf("ManagedMCPs = %v, want %v", got.ManagedMCPs, want)
+	}
+}
+
+func TestStore_SetManagedMCPs_ReturnsCopy(t *testing.T) {
+	s := NewStore()
+	if err := s.Add(model.Project{Name: "myproject", Path: "/test"}); err != nil {
+		t.Fatal(err)
+	}
+	input := []string{"github"}
+	if err := s.SetManagedMCPs("myproject", input); err != nil {
+		t.Fatal(err)
+	}
+	input[0] = "mutated"
+	got, _ := s.Get("myproject")
+	if got.ManagedMCPs[0] != "github" {
+		t.Error("SetManagedMCPs did not copy the input slice")
+	}
+}
+
+func TestStore_FindByPath(t *testing.T) {
+	s := NewStore()
+	if err := s.Add(model.Project{Name: "myproject", Path: "/test/myproject"}); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := s.FindByPath("/test/myproject")
+	if !ok {
+		t.Fatal("FindByPath returned false")
+	}
+	if got.Name != "myproject" {
+		t.Errorf("Name = %q, want myproject", got.Name)
+	}
+}
+
+func TestStore_FindByPath_NotFound(t *testing.T) {
+	s := NewStore()
+	_, ok := s.FindByPath("/nonexistent")
+	if ok {
+		t.Error("FindByPath returned true for nonexistent path")
+	}
+}
+
+func TestStore_SaveLoad_RoundTrip(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "projects.yaml")
+
+	original := NewStore()
+	origProject := model.Project{
+		Name:          "interview-platform",
+		Path:          "/test/interview-platform",
+		ActiveProfile: "dev",
+		ManagedMCPs:   []string{"github", "postgres"},
+	}
+	if err := original.Add(origProject); err != nil {
+		t.Fatal(err)
+	}
+	if err := original.Add(model.Project{
+		Name:          "personal-site",
+		Path:          "/test/personal-site",
+		ActiveProfile: "default",
+		ManagedMCPs:   []string{"github"},
+	}); err != nil {
+		t.Fatal(err)
 	}
 
-	if err := s.Save(path); err != nil {
-		t.Fatalf("Save: %v", err)
+	if err := original.Save(path); err != nil {
+		t.Fatal(err)
 	}
 
 	loaded, err := Load(path)
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		t.Fatal(err)
 	}
 
-	// Verify agents project.
-	agents, ok := loaded.Get("agents")
-	if !ok {
-		t.Fatal("expected agents project")
-	}
-	if agents.Name != "agents" {
-		t.Errorf("expected Name=agents, got %q", agents.Name)
-	}
-	if agents.Path != "/workspace/agents" {
-		t.Errorf("expected Path=/workspace/agents, got %q", agents.Path)
-	}
-	if len(agents.Tags) != 1 || agents.Tags[0] != "core" {
-		t.Errorf("expected Tags=[core], got %v", agents.Tags)
-	}
-	if len(agents.MCPs) != 1 {
-		t.Fatalf("expected 1 MCP, got %d", len(agents.MCPs))
-	}
-	if agents.MCPs[0].Name != "qdrant" {
-		t.Errorf("expected MCP name=qdrant, got %q", agents.MCPs[0].Name)
-	}
-	if agents.MCPs[0].Overrides == nil {
-		t.Fatal("expected override on qdrant")
-	}
-	if agents.MCPs[0].Overrides.Env["COLLECTION_NAME"] != "agent-context" {
-		t.Errorf("expected COLLECTION_NAME=agent-context, got %q", agents.MCPs[0].Overrides.Env["COLLECTION_NAME"])
-	}
+	t.Run("count", func(t *testing.T) {
+		if loaded.Len() != 2 {
+			t.Fatalf("Len() = %d, want 2", loaded.Len())
+		}
+	})
 
-	// Verify hystak project has bare MCPs.
-	hystak, ok := loaded.Get("hystak")
-	if !ok {
-		t.Fatal("expected hystak project")
-	}
-	if len(hystak.MCPs) != 2 {
-		t.Fatalf("expected 2 MCPs, got %d", len(hystak.MCPs))
-	}
-	if hystak.MCPs[0].Overrides != nil || hystak.MCPs[1].Overrides != nil {
-		t.Error("expected bare MCPs with no overrides")
-	}
+	t.Run("interview-platform", func(t *testing.T) {
+		got, ok := loaded.Get("interview-platform")
+		if !ok {
+			t.Fatal("missing project")
+		}
+		if !reflect.DeepEqual(got, origProject) {
+			t.Errorf("mismatch:\n  got:  %+v\n  want: %+v", got, origProject)
+		}
+	})
 
-	// Verify override round-trip with command pointer.
-	s2 := &Store{
-		Projects: map[string]model.Project{
-			"test": {
-				Name:    "test",
-				Path:    "/test",
-				Clients: []model.ClientType{model.ClientClaudeCode},
-				MCPs: []model.MCPAssignment{
-					{Name: "srv", Overrides: &model.ServerOverride{Command: &cmd}},
-				},
-			},
-		},
-	}
-	path2 := filepath.Join(dir, "projects2.yaml")
-	if err := s2.Save(path2); err != nil {
-		t.Fatalf("Save: %v", err)
-	}
-	loaded2, err := Load(path2)
+	t.Run("personal-site", func(t *testing.T) {
+		got, ok := loaded.Get("personal-site")
+		if !ok {
+			t.Fatal("missing project")
+		}
+		if got.Path != "/test/personal-site" {
+			t.Errorf("Path = %q", got.Path)
+		}
+		if got.ActiveProfile != "default" {
+			t.Errorf("ActiveProfile = %q", got.ActiveProfile)
+		}
+	})
+}
+
+func TestStore_Load_NonexistentFile(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "nonexistent.yaml")
+
+	store, err := Load(path)
 	if err != nil {
-		t.Fatalf("Load: %v", err)
+		t.Fatal(err)
 	}
-	testProj, _ := loaded2.Get("test")
-	if testProj.MCPs[0].Overrides == nil || testProj.MCPs[0].Overrides.Command == nil {
-		t.Fatal("expected command override")
-	}
-	if *testProj.MCPs[0].Overrides.Command != "custom-npx" {
-		t.Errorf("expected command=custom-npx, got %q", *testProj.MCPs[0].Overrides.Command)
+	if store.Len() != 0 {
+		t.Error("loading nonexistent file should return empty store")
 	}
 }
 
-func TestAddRemove(t *testing.T) {
-	s := &Store{Projects: make(map[string]model.Project)}
+func TestStore_Load_MalformedYAML(t *testing.T) {
+	tmp := t.TempDir()
+	path := filepath.Join(tmp, "projects.yaml")
 
-	proj := model.Project{
-		Name:    "myproject",
-		Path:    "/my/project",
-		Clients: []model.ClientType{model.ClientClaudeCode},
+	if err := writeFile(t, path, "projects: [bad"); err != nil {
+		t.Fatal(err)
 	}
-
-	// Add.
-	if err := s.Add(proj); err != nil {
-		t.Fatalf("Add: %v", err)
-	}
-
-	// Duplicate add.
-	if err := s.Add(proj); err == nil {
-		t.Fatal("expected error on duplicate add")
-	}
-
-	// Get.
-	got, ok := s.Get("myproject")
-	if !ok {
-		t.Fatal("expected project to exist")
-	}
-	if got.Path != "/my/project" {
-		t.Errorf("expected path=/my/project, got %q", got.Path)
-	}
-
-	// List.
-	list := s.List()
-	if len(list) != 1 {
-		t.Fatalf("expected 1 project, got %d", len(list))
-	}
-
-	// Remove.
-	if err := s.Remove("myproject"); err != nil {
-		t.Fatalf("Remove: %v", err)
-	}
-
-	// Remove non-existent.
-	if err := s.Remove("myproject"); err == nil {
-		t.Fatal("expected error on remove of non-existent project")
+	_, err := Load(path)
+	if err == nil {
+		t.Fatal("expected error for malformed YAML")
 	}
 }
 
-func TestAssignUnassign(t *testing.T) {
-	s := &Store{Projects: map[string]model.Project{
-		"proj": {Name: "proj", Path: "/proj", Clients: []model.ClientType{model.ClientClaudeCode}},
-	}}
-
-	// Assign.
-	if err := s.Assign("proj", "github"); err != nil {
-		t.Fatalf("Assign: %v", err)
-	}
-	proj, _ := s.Get("proj")
-	if len(proj.MCPs) != 1 || proj.MCPs[0].Name != "github" {
-		t.Fatalf("expected github assigned, got %v", proj.MCPs)
-	}
-
-	// Duplicate assign.
-	if err := s.Assign("proj", "github"); err == nil {
-		t.Fatal("expected error on duplicate assign")
-	}
-
-	// Assign to non-existent project.
-	if err := s.Assign("nonexistent", "github"); err == nil {
-		t.Fatal("expected error on assign to non-existent project")
-	}
-
-	// Unassign.
-	if err := s.Unassign("proj", "github"); err != nil {
-		t.Fatalf("Unassign: %v", err)
-	}
-	proj, _ = s.Get("proj")
-	if len(proj.MCPs) != 0 {
-		t.Fatalf("expected no MCPs, got %v", proj.MCPs)
-	}
-
-	// Unassign non-existent server.
-	if err := s.Unassign("proj", "github"); err == nil {
-		t.Fatal("expected error on unassign of non-existent server")
-	}
-
-	// Unassign from non-existent project.
-	if err := s.Unassign("nonexistent", "github"); err == nil {
-		t.Fatal("expected error on unassign from non-existent project")
-	}
-}
-
-func TestSetOverride(t *testing.T) {
-	s := &Store{Projects: map[string]model.Project{
-		"proj": {
-			Name:    "proj",
-			Path:    "/proj",
-			Clients: []model.ClientType{model.ClientClaudeCode},
-			MCPs:    []model.MCPAssignment{{Name: "github"}},
-		},
-	}}
-
-	override := model.ServerOverride{
-		Env: map[string]string{"GITHUB_TOKEN": "${ORG_TOKEN}"},
-	}
-
-	// Set override on existing assignment.
-	if err := s.SetOverride("proj", "github", override); err != nil {
-		t.Fatalf("SetOverride: %v", err)
-	}
-	proj, _ := s.Get("proj")
-	if proj.MCPs[0].Overrides == nil {
-		t.Fatal("expected override set")
-	}
-	if proj.MCPs[0].Overrides.Env["GITHUB_TOKEN"] != "${ORG_TOKEN}" {
-		t.Errorf("expected env override, got %v", proj.MCPs[0].Overrides.Env)
-	}
-
-	// Set override on unassigned server (should add it).
-	override2 := model.ServerOverride{
-		Env: map[string]string{"KEY": "val"},
-	}
-	if err := s.SetOverride("proj", "qdrant", override2); err != nil {
-		t.Fatalf("SetOverride for new server: %v", err)
-	}
-	proj, _ = s.Get("proj")
-	if len(proj.MCPs) != 2 {
-		t.Fatalf("expected 2 MCPs, got %d", len(proj.MCPs))
-	}
-	if proj.MCPs[1].Name != "qdrant" || proj.MCPs[1].Overrides == nil {
-		t.Error("expected qdrant with override added")
-	}
-
-	// Set override on non-existent project.
-	if err := s.SetOverride("nonexistent", "github", override); err == nil {
-		t.Fatal("expected error on non-existent project")
-	}
-}
-
-func TestSetClients(t *testing.T) {
-	s := &Store{Projects: map[string]model.Project{
-		"proj": {Name: "proj", Path: "/proj", Clients: []model.ClientType{model.ClientClaudeCode}},
-	}}
-
-	newClients := []model.ClientType{model.ClientClaudeCode, model.ClientClaudeDesktop}
-	if err := s.SetClients("proj", newClients); err != nil {
-		t.Fatalf("SetClients: %v", err)
-	}
-	proj, _ := s.Get("proj")
-	if len(proj.Clients) != 2 {
-		t.Fatalf("expected 2 clients, got %d", len(proj.Clients))
-	}
-
-	if err := s.SetClients("nonexistent", newClients); err == nil {
-		t.Fatal("expected error on non-existent project")
-	}
-}
-
-func TestSetTags(t *testing.T) {
-	s := &Store{Projects: map[string]model.Project{
-		"proj": {Name: "proj", Path: "/proj", Clients: []model.ClientType{model.ClientClaudeCode}},
-	}}
-
-	if err := s.SetTags("proj", []string{"core", "data"}); err != nil {
-		t.Fatalf("SetTags: %v", err)
-	}
-	proj, _ := s.Get("proj")
-	if len(proj.Tags) != 2 {
-		t.Fatalf("expected 2 tags, got %d", len(proj.Tags))
-	}
-
-	if err := s.SetTags("nonexistent", []string{"core"}); err == nil {
-		t.Fatal("expected error on non-existent project")
-	}
-}
-
-// Helper to create a test registry with known servers and tags.
-func testRegistry(t *testing.T) *registry.Registry {
+func writeFile(t *testing.T, path, content string) error {
 	t.Helper()
-	dir := t.TempDir()
-	path := filepath.Join(dir, "registry.yaml")
-
-	yaml := `servers:
-  github:
-    description: "GitHub API"
-    transport: stdio
-    command: npx
-    args: ["-y", "@modelcontextprotocol/server-github"]
-    env:
-      GITHUB_TOKEN: "${GITHUB_TOKEN}"
-  filesystem:
-    description: "Filesystem"
-    transport: stdio
-    command: npx
-    args: ["-y", "@modelcontextprotocol/server-filesystem", "/"]
-  qdrant:
-    description: "Qdrant"
-    transport: stdio
-    command: uvx
-    args: ["mcp-server-qdrant"]
-    env:
-      QDRANT_URL: "${QDRANT_URL}"
-      COLLECTION_NAME: "${COLLECTION_NAME}"
-  remote-api:
-    description: "Remote API"
-    transport: http
-    url: "https://mcp.example.com/mcp"
-    headers:
-      Authorization: "Bearer ${API_TOKEN}"
-tags:
-  core: [github, filesystem]
-  data: [qdrant]
-`
-	if err := os.WriteFile(path, []byte(yaml), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	reg, err := registry.Load(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-	return reg
-}
-
-func TestResolveServersTagsOnly(t *testing.T) {
-	reg := testRegistry(t)
-	s := &Store{Projects: map[string]model.Project{
-		"proj": {
-			Name:    "proj",
-			Path:    "/proj",
-			Clients: []model.ClientType{model.ClientClaudeCode},
-			Tags:    []string{"core"},
-		},
-	}}
-
-	resolved, err := s.ResolveServers("proj", reg)
-	if err != nil {
-		t.Fatalf("ResolveServers: %v", err)
-	}
-	if len(resolved) != 2 {
-		t.Fatalf("expected 2 servers, got %d", len(resolved))
-	}
-
-	names := map[string]bool{}
-	for _, srv := range resolved {
-		names[srv.Name] = true
-	}
-	if !names["github"] || !names["filesystem"] {
-		t.Errorf("expected github and filesystem, got %v", names)
-	}
-}
-
-func TestResolveServersMCPsOnly(t *testing.T) {
-	reg := testRegistry(t)
-	s := &Store{Projects: map[string]model.Project{
-		"proj": {
-			Name:    "proj",
-			Path:    "/proj",
-			Clients: []model.ClientType{model.ClientClaudeCode},
-			MCPs: []model.MCPAssignment{
-				{Name: "github"},
-				{Name: "qdrant"},
-			},
-		},
-	}}
-
-	resolved, err := s.ResolveServers("proj", reg)
-	if err != nil {
-		t.Fatalf("ResolveServers: %v", err)
-	}
-	if len(resolved) != 2 {
-		t.Fatalf("expected 2 servers, got %d", len(resolved))
-	}
-	if resolved[0].Name != "github" || resolved[1].Name != "qdrant" {
-		t.Errorf("unexpected order: %v, %v", resolved[0].Name, resolved[1].Name)
-	}
-}
-
-func TestResolveServersTagsPlusMCPsUnion(t *testing.T) {
-	reg := testRegistry(t)
-	s := &Store{Projects: map[string]model.Project{
-		"proj": {
-			Name:    "proj",
-			Path:    "/proj",
-			Clients: []model.ClientType{model.ClientClaudeCode},
-			Tags:    []string{"core"},
-			MCPs: []model.MCPAssignment{
-				{Name: "qdrant"},
-				{Name: "github"}, // duplicate from tag — should be deduped
-			},
-		},
-	}}
-
-	resolved, err := s.ResolveServers("proj", reg)
-	if err != nil {
-		t.Fatalf("ResolveServers: %v", err)
-	}
-	if len(resolved) != 3 {
-		t.Fatalf("expected 3 servers (github, filesystem, qdrant), got %d", len(resolved))
-	}
-
-	names := make([]string, len(resolved))
-	for i, srv := range resolved {
-		names[i] = srv.Name
-	}
-	// Tags expand first (github, filesystem), then mcps add qdrant.
-	// github from mcps is deduped.
-	expected := []string{"github", "filesystem", "qdrant"}
-	for i, exp := range expected {
-		if names[i] != exp {
-			t.Errorf("position %d: expected %q, got %q", i, exp, names[i])
-		}
-	}
-}
-
-func TestResolveServersOverrideOnTagExpanded(t *testing.T) {
-	reg := testRegistry(t)
-	s := &Store{Projects: map[string]model.Project{
-		"proj": {
-			Name:    "proj",
-			Path:    "/proj",
-			Clients: []model.ClientType{model.ClientClaudeCode},
-			Tags:    []string{"core"},
-			MCPs: []model.MCPAssignment{
-				{Name: "github", Overrides: &model.ServerOverride{
-					Env: map[string]string{"GITHUB_TOKEN": "${ORG_TOKEN}"},
-				}},
-			},
-		},
-	}}
-
-	resolved, err := s.ResolveServers("proj", reg)
-	if err != nil {
-		t.Fatalf("ResolveServers: %v", err)
-	}
-
-	// Find github in resolved.
-	var github *model.ServerDef
-	for i := range resolved {
-		if resolved[i].Name == "github" {
-			github = &resolved[i]
-			break
-		}
-	}
-	if github == nil {
-		t.Fatal("expected github in resolved servers")
-	}
-	if github.Env["GITHUB_TOKEN"] != "${ORG_TOKEN}" {
-		t.Errorf("expected GITHUB_TOKEN=${ORG_TOKEN}, got %q", github.Env["GITHUB_TOKEN"])
-	}
-}
-
-func TestResolveServersOverrideEnvMerge(t *testing.T) {
-	reg := testRegistry(t)
-	s := &Store{Projects: map[string]model.Project{
-		"proj": {
-			Name:    "proj",
-			Path:    "/proj",
-			Clients: []model.ClientType{model.ClientClaudeCode},
-			MCPs: []model.MCPAssignment{
-				{Name: "qdrant", Overrides: &model.ServerOverride{
-					Env: map[string]string{"COLLECTION_NAME": "agent-context"},
-				}},
-			},
-		},
-	}}
-
-	resolved, err := s.ResolveServers("proj", reg)
-	if err != nil {
-		t.Fatalf("ResolveServers: %v", err)
-	}
-	if len(resolved) != 1 {
-		t.Fatalf("expected 1 server, got %d", len(resolved))
-	}
-
-	qdrant := resolved[0]
-	// Env should be merged: QDRANT_URL from registry, COLLECTION_NAME overridden.
-	if qdrant.Env["QDRANT_URL"] != "${QDRANT_URL}" {
-		t.Errorf("expected QDRANT_URL preserved, got %q", qdrant.Env["QDRANT_URL"])
-	}
-	if qdrant.Env["COLLECTION_NAME"] != "agent-context" {
-		t.Errorf("expected COLLECTION_NAME=agent-context, got %q", qdrant.Env["COLLECTION_NAME"])
-	}
-}
-
-func TestResolveServersOverrideArgsReplace(t *testing.T) {
-	reg := testRegistry(t)
-	s := &Store{Projects: map[string]model.Project{
-		"proj": {
-			Name:    "proj",
-			Path:    "/proj",
-			Clients: []model.ClientType{model.ClientClaudeCode},
-			MCPs: []model.MCPAssignment{
-				{Name: "github", Overrides: &model.ServerOverride{
-					Args: []string{"--custom", "flag"},
-				}},
-			},
-		},
-	}}
-
-	resolved, err := s.ResolveServers("proj", reg)
-	if err != nil {
-		t.Fatalf("ResolveServers: %v", err)
-	}
-
-	github := resolved[0]
-	if len(github.Args) != 2 || github.Args[0] != "--custom" || github.Args[1] != "flag" {
-		t.Errorf("expected args replaced to [--custom flag], got %v", github.Args)
-	}
-}
-
-func TestResolveServersOverrideCommand(t *testing.T) {
-	reg := testRegistry(t)
-	cmd := "custom-npx"
-	s := &Store{Projects: map[string]model.Project{
-		"proj": {
-			Name:    "proj",
-			Path:    "/proj",
-			Clients: []model.ClientType{model.ClientClaudeCode},
-			MCPs: []model.MCPAssignment{
-				{Name: "github", Overrides: &model.ServerOverride{
-					Command: &cmd,
-				}},
-			},
-		},
-	}}
-
-	resolved, err := s.ResolveServers("proj", reg)
-	if err != nil {
-		t.Fatalf("ResolveServers: %v", err)
-	}
-	if resolved[0].Command != "custom-npx" {
-		t.Errorf("expected command=custom-npx, got %q", resolved[0].Command)
-	}
-}
-
-func TestResolveServersOverrideURL(t *testing.T) {
-	reg := testRegistry(t)
-	url := "https://new.example.com/mcp"
-	s := &Store{Projects: map[string]model.Project{
-		"proj": {
-			Name:    "proj",
-			Path:    "/proj",
-			Clients: []model.ClientType{model.ClientClaudeCode},
-			MCPs: []model.MCPAssignment{
-				{Name: "remote-api", Overrides: &model.ServerOverride{
-					URL: &url,
-				}},
-			},
-		},
-	}}
-
-	resolved, err := s.ResolveServers("proj", reg)
-	if err != nil {
-		t.Fatalf("ResolveServers: %v", err)
-	}
-	if resolved[0].URL != "https://new.example.com/mcp" {
-		t.Errorf("expected URL override, got %q", resolved[0].URL)
-	}
-}
-
-func TestResolveServersOverrideHeaders(t *testing.T) {
-	reg := testRegistry(t)
-	s := &Store{Projects: map[string]model.Project{
-		"proj": {
-			Name:    "proj",
-			Path:    "/proj",
-			Clients: []model.ClientType{model.ClientClaudeCode},
-			MCPs: []model.MCPAssignment{
-				{Name: "remote-api", Overrides: &model.ServerOverride{
-					Headers: map[string]string{"X-Custom": "value"},
-				}},
-			},
-		},
-	}}
-
-	resolved, err := s.ResolveServers("proj", reg)
-	if err != nil {
-		t.Fatalf("ResolveServers: %v", err)
-	}
-
-	api := resolved[0]
-	// Headers should be merged: Authorization from registry, X-Custom from override.
-	if api.Headers["Authorization"] != "Bearer ${API_TOKEN}" {
-		t.Errorf("expected Authorization preserved, got %q", api.Headers["Authorization"])
-	}
-	if api.Headers["X-Custom"] != "value" {
-		t.Errorf("expected X-Custom=value, got %q", api.Headers["X-Custom"])
-	}
-}
-
-func TestResolveServersDanglingReference(t *testing.T) {
-	reg := testRegistry(t)
-	s := &Store{Projects: map[string]model.Project{
-		"proj": {
-			Name:    "proj",
-			Path:    "/proj",
-			Clients: []model.ClientType{model.ClientClaudeCode},
-			MCPs: []model.MCPAssignment{
-				{Name: "nonexistent-server"},
-			},
-		},
-	}}
-
-	_, err := s.ResolveServers("proj", reg)
-	if err == nil {
-		t.Fatal("expected error for dangling server reference")
-	}
-}
-
-func TestResolveServersProjectNotFound(t *testing.T) {
-	reg := testRegistry(t)
-	s := &Store{Projects: make(map[string]model.Project)}
-
-	_, err := s.ResolveServers("nonexistent", reg)
-	if err == nil {
-		t.Fatal("expected error for non-existent project")
-	}
-}
-
-func TestResolveServersDanglingTag(t *testing.T) {
-	reg := testRegistry(t)
-	s := &Store{Projects: map[string]model.Project{
-		"proj": {
-			Name:    "proj",
-			Path:    "/proj",
-			Clients: []model.ClientType{model.ClientClaudeCode},
-			Tags:    []string{"nonexistent-tag"},
-		},
-	}}
-
-	_, err := s.ResolveServers("proj", reg)
-	if err == nil {
-		t.Fatal("expected error for dangling tag reference")
-	}
-}
-
-func TestResolveServersServerInBothTagAndMCPsWithOverride(t *testing.T) {
-	reg := testRegistry(t)
-	// github is in tag "core" AND in mcps with an override.
-	s := &Store{Projects: map[string]model.Project{
-		"proj": {
-			Name:    "proj",
-			Path:    "/proj",
-			Clients: []model.ClientType{model.ClientClaudeCode},
-			Tags:    []string{"core"},
-			MCPs: []model.MCPAssignment{
-				{Name: "github", Overrides: &model.ServerOverride{
-					Env: map[string]string{"GITHUB_TOKEN": "${ORG_TOKEN}"},
-				}},
-			},
-		},
-	}}
-
-	resolved, err := s.ResolveServers("proj", reg)
-	if err != nil {
-		t.Fatalf("ResolveServers: %v", err)
-	}
-
-	// Should have 2: github (from tag, deduped with mcps) and filesystem.
-	if len(resolved) != 2 {
-		t.Fatalf("expected 2 servers, got %d", len(resolved))
-	}
-
-	var github *model.ServerDef
-	for i := range resolved {
-		if resolved[i].Name == "github" {
-			github = &resolved[i]
-		}
-	}
-	if github == nil {
-		t.Fatal("github not found in resolved servers")
-	}
-	// Override should be applied even though github came from tag expansion.
-	if github.Env["GITHUB_TOKEN"] != "${ORG_TOKEN}" {
-		t.Errorf("expected override applied, got %q", github.Env["GITHUB_TOKEN"])
-	}
-}
-
-func TestListSorted(t *testing.T) {
-	s := &Store{Projects: map[string]model.Project{
-		"zebra": {Name: "zebra", Path: "/z"},
-		"alpha": {Name: "alpha", Path: "/a"},
-		"mid":   {Name: "mid", Path: "/m"},
-	}}
-
-	list := s.List()
-	if len(list) != 3 {
-		t.Fatalf("expected 3 projects, got %d", len(list))
-	}
-	if list[0].Name != "alpha" || list[1].Name != "mid" || list[2].Name != "zebra" {
-		t.Errorf("expected sorted order, got %v, %v, %v", list[0].Name, list[1].Name, list[2].Name)
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Skill assignment tests
-// ---------------------------------------------------------------------------
-
-func newStoreWithProject() *Store {
-	return &Store{Projects: map[string]model.Project{
-		"proj": {Name: "proj", Path: "/proj", Clients: []model.ClientType{model.ClientClaudeCode}},
-	}}
-}
-
-func TestAssignSkill(t *testing.T) {
-	s := newStoreWithProject()
-
-	if err := s.AssignSkill("proj", "code-review"); err != nil {
-		t.Fatalf("AssignSkill: %v", err)
-	}
-
-	proj, _ := s.Get("proj")
-	if len(proj.Skills) != 1 || proj.Skills[0] != "code-review" {
-		t.Fatalf("expected Skills=[code-review], got %v", proj.Skills)
-	}
-}
-
-func TestAssignSkillDuplicate(t *testing.T) {
-	s := newStoreWithProject()
-
-	if err := s.AssignSkill("proj", "code-review"); err != nil {
-		t.Fatalf("AssignSkill: %v", err)
-	}
-	if err := s.AssignSkill("proj", "code-review"); err == nil {
-		t.Fatal("expected error on duplicate skill assignment")
-	}
-}
-
-func TestAssignSkillProjectNotFound(t *testing.T) {
-	s := newStoreWithProject()
-
-	if err := s.AssignSkill("nonexistent", "code-review"); err == nil {
-		t.Fatal("expected error on assign skill to non-existent project")
-	}
-}
-
-func TestUnassignSkill(t *testing.T) {
-	s := newStoreWithProject()
-
-	_ = s.AssignSkill("proj", "code-review")
-	_ = s.AssignSkill("proj", "testing")
-
-	if err := s.UnassignSkill("proj", "code-review"); err != nil {
-		t.Fatalf("UnassignSkill: %v", err)
-	}
-
-	proj, _ := s.Get("proj")
-	if len(proj.Skills) != 1 || proj.Skills[0] != "testing" {
-		t.Fatalf("expected Skills=[testing], got %v", proj.Skills)
-	}
-}
-
-func TestUnassignSkillNotAssigned(t *testing.T) {
-	s := newStoreWithProject()
-
-	if err := s.UnassignSkill("proj", "code-review"); err == nil {
-		t.Fatal("expected error on unassign of not-assigned skill")
-	}
-}
-
-func TestUnassignSkillProjectNotFound(t *testing.T) {
-	s := newStoreWithProject()
-
-	if err := s.UnassignSkill("nonexistent", "code-review"); err == nil {
-		t.Fatal("expected error on unassign skill from non-existent project")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Hook assignment tests
-// ---------------------------------------------------------------------------
-
-func TestAssignHook(t *testing.T) {
-	s := newStoreWithProject()
-
-	if err := s.AssignHook("proj", "pre-commit"); err != nil {
-		t.Fatalf("AssignHook: %v", err)
-	}
-
-	proj, _ := s.Get("proj")
-	if len(proj.Hooks) != 1 || proj.Hooks[0] != "pre-commit" {
-		t.Fatalf("expected Hooks=[pre-commit], got %v", proj.Hooks)
-	}
-}
-
-func TestAssignHookDuplicate(t *testing.T) {
-	s := newStoreWithProject()
-
-	if err := s.AssignHook("proj", "pre-commit"); err != nil {
-		t.Fatalf("AssignHook: %v", err)
-	}
-	if err := s.AssignHook("proj", "pre-commit"); err == nil {
-		t.Fatal("expected error on duplicate hook assignment")
-	}
-}
-
-func TestAssignHookProjectNotFound(t *testing.T) {
-	s := newStoreWithProject()
-
-	if err := s.AssignHook("nonexistent", "pre-commit"); err == nil {
-		t.Fatal("expected error on assign hook to non-existent project")
-	}
-}
-
-func TestUnassignHook(t *testing.T) {
-	s := newStoreWithProject()
-
-	_ = s.AssignHook("proj", "pre-commit")
-	_ = s.AssignHook("proj", "post-deploy")
-
-	if err := s.UnassignHook("proj", "pre-commit"); err != nil {
-		t.Fatalf("UnassignHook: %v", err)
-	}
-
-	proj, _ := s.Get("proj")
-	if len(proj.Hooks) != 1 || proj.Hooks[0] != "post-deploy" {
-		t.Fatalf("expected Hooks=[post-deploy], got %v", proj.Hooks)
-	}
-}
-
-func TestUnassignHookNotAssigned(t *testing.T) {
-	s := newStoreWithProject()
-
-	if err := s.UnassignHook("proj", "pre-commit"); err == nil {
-		t.Fatal("expected error on unassign of not-assigned hook")
-	}
-}
-
-func TestUnassignHookProjectNotFound(t *testing.T) {
-	s := newStoreWithProject()
-
-	if err := s.UnassignHook("nonexistent", "pre-commit"); err == nil {
-		t.Fatal("expected error on unassign hook from non-existent project")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Permission assignment tests
-// ---------------------------------------------------------------------------
-
-func TestAssignPermission(t *testing.T) {
-	s := newStoreWithProject()
-
-	if err := s.AssignPermission("proj", "read-files"); err != nil {
-		t.Fatalf("AssignPermission: %v", err)
-	}
-
-	proj, _ := s.Get("proj")
-	if len(proj.Permissions) != 1 || proj.Permissions[0] != "read-files" {
-		t.Fatalf("expected Permissions=[read-files], got %v", proj.Permissions)
-	}
-}
-
-func TestAssignPermissionDuplicate(t *testing.T) {
-	s := newStoreWithProject()
-
-	if err := s.AssignPermission("proj", "read-files"); err != nil {
-		t.Fatalf("AssignPermission: %v", err)
-	}
-	if err := s.AssignPermission("proj", "read-files"); err == nil {
-		t.Fatal("expected error on duplicate permission assignment")
-	}
-}
-
-func TestAssignPermissionProjectNotFound(t *testing.T) {
-	s := newStoreWithProject()
-
-	if err := s.AssignPermission("nonexistent", "read-files"); err == nil {
-		t.Fatal("expected error on assign permission to non-existent project")
-	}
-}
-
-func TestUnassignPermission(t *testing.T) {
-	s := newStoreWithProject()
-
-	_ = s.AssignPermission("proj", "read-files")
-	_ = s.AssignPermission("proj", "write-files")
-
-	if err := s.UnassignPermission("proj", "read-files"); err != nil {
-		t.Fatalf("UnassignPermission: %v", err)
-	}
-
-	proj, _ := s.Get("proj")
-	if len(proj.Permissions) != 1 || proj.Permissions[0] != "write-files" {
-		t.Fatalf("expected Permissions=[write-files], got %v", proj.Permissions)
-	}
-}
-
-func TestUnassignPermissionNotAssigned(t *testing.T) {
-	s := newStoreWithProject()
-
-	if err := s.UnassignPermission("proj", "read-files"); err == nil {
-		t.Fatal("expected error on unassign of not-assigned permission")
-	}
-}
-
-func TestUnassignPermissionProjectNotFound(t *testing.T) {
-	s := newStoreWithProject()
-
-	if err := s.UnassignPermission("nonexistent", "read-files"); err == nil {
-		t.Fatal("expected error on unassign permission from non-existent project")
-	}
-}
-
-// ---------------------------------------------------------------------------
-// Template management tests
-// ---------------------------------------------------------------------------
-
-func TestSetClaudeMDTemplate(t *testing.T) {
-	s := newStoreWithProject()
-
-	if err := s.SetClaudeMDTemplate("proj", "go-backend"); err != nil {
-		t.Fatalf("SetClaudeMDTemplate: %v", err)
-	}
-
-	proj, _ := s.Get("proj")
-	if proj.ClaudeMD != "go-backend" {
-		t.Fatalf("expected ClaudeMD=go-backend, got %q", proj.ClaudeMD)
-	}
-}
-
-func TestSetClaudeMDTemplateProjectNotFound(t *testing.T) {
-	s := newStoreWithProject()
-
-	if err := s.SetClaudeMDTemplate("nonexistent", "go-backend"); err == nil {
-		t.Fatal("expected error on set template for non-existent project")
-	}
-}
-
-func TestClearClaudeMDTemplate(t *testing.T) {
-	s := newStoreWithProject()
-
-	_ = s.SetClaudeMDTemplate("proj", "go-backend")
-
-	if err := s.ClearClaudeMDTemplate("proj"); err != nil {
-		t.Fatalf("ClearClaudeMDTemplate: %v", err)
-	}
-
-	proj, _ := s.Get("proj")
-	if proj.ClaudeMD != "" {
-		t.Fatalf("expected ClaudeMD empty, got %q", proj.ClaudeMD)
-	}
-}
-
-func TestClearClaudeMDTemplateProjectNotFound(t *testing.T) {
-	s := newStoreWithProject()
-
-	if err := s.ClearClaudeMDTemplate("nonexistent"); err == nil {
-		t.Fatal("expected error on clear template for non-existent project")
-	}
+	return os.WriteFile(path, []byte(content), 0o644)
 }

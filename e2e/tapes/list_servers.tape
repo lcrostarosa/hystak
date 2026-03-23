@@ -1,9 +1,36 @@
-# E2E test: verify hystak list output with seeded registry
-Output e2e/actual/list_servers.txt
-Set Shell "bash"
-Set Width 100
-Set Height 30
+Output e2e/actual/list_servers.gif
 
-Type "hystak --config-dir $HYSTAK_CONFIG_DIR list"
+Set Shell "bash"
+Set Width 120
+Set Height 120
+
+Type "export HYSTAK_CONFIG_DIR=$(mktemp -d)"
+Enter
+Sleep 500ms
+
+Type "mkdir -p $HYSTAK_CONFIG_DIR"
+Enter
+Sleep 500ms
+
+# Write registry using heredoc to avoid VHS special char issues
+Type "cat > $HYSTAK_CONFIG_DIR/registry.yaml << 'EOF'"
+Enter
+Type "mcps:"
+Enter
+Type "  github:"
+Enter
+Type "    transport: stdio"
+Enter
+Type "    command: npx"
+Enter
+Type "EOF"
+Enter
+Sleep 500ms
+
+Type "hystak list"
 Enter
 Sleep 1s
+
+Type "rm -rf $HYSTAK_CONFIG_DIR"
+Enter
+Sleep 500ms

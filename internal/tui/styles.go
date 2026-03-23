@@ -2,102 +2,71 @@ package tui
 
 import "github.com/charmbracelet/lipgloss"
 
+// Color scheme — monochrome-compatible with color enhancement.
 var (
-	activeTabStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("205")).
-			Border(lipgloss.NormalBorder(), false, false, true, false).
-			BorderForeground(lipgloss.Color("205")).
-			Padding(0, 2)
-
-	inactiveTabStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("245")).
-				Padding(0, 2)
-
-	tabGapStyle = lipgloss.NewStyle().
-			Border(lipgloss.NormalBorder(), false, false, true, false).
-			BorderForeground(lipgloss.Color("238"))
-
-	statusBarStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245")).
-			Padding(0, 1)
-
-	contentStyle = lipgloss.NewStyle().
-			Padding(1, 2)
-
-	detailPaneStyle = lipgloss.NewStyle().
-			Padding(0, 1).
-			Border(lipgloss.NormalBorder(), false, false, false, true).
-			BorderForeground(lipgloss.Color("238"))
-
-	detailTitleStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("205"))
-
-	detailLabelStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("245"))
-
-	confirmStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("202")).
-			Bold(true)
-
-	errorStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196"))
-
-	syncMsgStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("42"))
-
-	formTitleStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("205")).
-			MarginBottom(1)
-
-	formLabelStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("245"))
-
-	formBoxStyle = lipgloss.NewStyle().
-			Border(lipgloss.RoundedBorder()).
-			BorderForeground(lipgloss.Color("205")).
-			Padding(1, 2)
-
-	formSelectedTransportStyle = lipgloss.NewStyle().
-					Bold(true).
-					Foreground(lipgloss.Color("205")).
-					Background(lipgloss.Color("236")).
-					Padding(0, 1)
-
-	formTransportStyle = lipgloss.NewStyle().
-				Foreground(lipgloss.Color("245")).
-				Padding(0, 1)
-
-	formHintStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("241")).
-			Italic(true)
-
-	diffAddStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("42"))
-
-	diffDelStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("196"))
-
-	diffHunkStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("45"))
-
-	diffHeaderStyle = lipgloss.NewStyle().
-			Bold(true).
-			Foreground(lipgloss.Color("245"))
-
-	sectionHeaderStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("205")).
-				MarginTop(1)
-
-	sectionActiveStyle = lipgloss.NewStyle().
-				Bold(true).
-				Foreground(lipgloss.Color("205"))
-
-	sectionDimStyle = lipgloss.NewStyle().
-			Foreground(lipgloss.Color("245"))
+	colorPrimary   = lipgloss.Color("12")  // blue
+	colorGreen     = lipgloss.Color("10")  // green
+	colorYellow    = lipgloss.Color("11")  // yellow
+	colorRed       = lipgloss.Color("9")   // red
+	colorDim       = lipgloss.Color("245") // gray
+	colorCyan      = lipgloss.Color("14")  // cyan
+	colorHighlight = lipgloss.Color("15")  // bright white
 )
+
+// Tab bar styles.
+var (
+	styleTabActive = lipgloss.NewStyle().
+			Bold(true).
+			Underline(true).
+			Foreground(colorHighlight)
+
+	styleTabInactive = lipgloss.NewStyle().
+				Foreground(colorDim)
+
+	styleTabBar = lipgloss.NewStyle().
+			PaddingLeft(1).
+			PaddingBottom(1)
+)
+
+// List styles.
+var (
+	styleListHeader = lipgloss.NewStyle().
+			Bold(true).
+			Foreground(colorDim)
+
+	styleListSelected = lipgloss.NewStyle().
+				Reverse(true)
+
+	styleListNormal = lipgloss.NewStyle()
+)
+
+// Status indicator styles.
+var (
+	styleSynced    = lipgloss.NewStyle().Foreground(colorGreen)
+	styleDrifted   = lipgloss.NewStyle().Foreground(colorYellow)
+	styleMissing   = lipgloss.NewStyle().Foreground(colorPrimary)
+	styleUnmanaged = lipgloss.NewStyle().Foreground(colorDim)
+	styleError     = lipgloss.NewStyle().Foreground(colorRed)
+)
+
+// Overlay styles.
+var (
+	styleOverlayBorder = lipgloss.NewStyle().
+		Border(lipgloss.RoundedBorder()).
+		BorderForeground(colorCyan).
+		Padding(1, 2)
+)
+
+// Footer/help bar styles.
+var (
+	styleHelpKey  = lipgloss.NewStyle().Bold(true)
+	styleHelpDesc = lipgloss.NewStyle().Foreground(colorDim)
+	styleFooter   = lipgloss.NewStyle().
+			PaddingLeft(1).
+			PaddingTop(1)
+)
+
+// Title style.
+var styleTitle = lipgloss.NewStyle().
+	Bold(true).
+	Foreground(colorHighlight)

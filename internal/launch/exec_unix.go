@@ -3,17 +3,22 @@
 package launch
 
 import (
-	"fmt"
 	"os"
+	"os/signal"
 	"syscall"
 )
 
-// Exec replaces the current process with the given executable, running in dir.
-func Exec(executable string, args []string, dir string) error {
-	if err := os.Chdir(dir); err != nil {
-		return fmt.Errorf("changing to directory %q: %w", dir, err)
-	}
+var signalChan chan os.Signal
 
-	argv := append([]string{executable}, args...)
-	return syscall.Exec(executable, argv, os.Environ())
+// ignoreSignals causes the parent to ignore SIGINT and SIGTERM
+// while a child process is running.
+func ignoreSignals() {
+	signalChan = make(chan os.Signal, 1)
+	signal.Notify(signalChan, syscall.SIGINT, syscall.SIGTERM)
+}
+
+// restoreSignals restores default signal handling.
+func restoreSignals() {
+	signal.Stop(signalChan)
+	signal.Reset(syscall.SIGINT, syscall.SIGTERM)
 }

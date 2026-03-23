@@ -1,106 +1,176 @@
 package cli
 
 import (
+	"bufio"
 	"fmt"
-	"os"
+	"os/exec"
+	"strings"
+	"text/tabwriter"
 
-	hysterr "github.com/lcrostarosa/hystak/internal/errors"
-	"github.com/lcrostarosa/hystak/internal/launch"
+	"github.com/hystak/hystak/internal/launch"
+	"github.com/hystak/hystak/internal/service"
 	"github.com/spf13/cobra"
 )
 
-func (a *cliApp) newRunCmd() *cobra.Command {
-	var (
-		noSync      bool
-		dryRun      bool
-		profileName string
-	)
+var (
+	runProfile string
+	runNoSync  bool
+	runDryRun  bool
+)
 
-	cmd := &cobra.Command{
-		Use:   "run <project> [client] [-- extra-args...]",
-		Short: "Sync and launch a client in the project directory",
-		Long: `Sync a project's MCP configs then launch a client (e.g. claude, opencode, cursor)
-in the project directory, replacing the manual "hystak sync && cd && client" workflow.
+var runCmd = &cobra.Command{
+	Use:         "run <project> [-- extra-args...]",
+	Short:       "Sync and launch Claude Code",
+	Long:        "Resolve the active profile, deploy configs, and launch the client. Post-exit loop offers relaunch/configure/quit.",
+	Args:        cobra.ArbitraryArgs,
+	Annotations: map[string]string{"mutates": "true"},
+	RunE:        runRun,
+}
 
-If no client is specified, the default executable for the project's first client type is used.
-Arguments after -- are forwarded to the client process.`,
-		Args: cobra.ArbitraryArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			// Split args at -- separator.
-			var extraArgs []string
-			if dashAt := cmd.ArgsLenAtDash(); dashAt >= 0 {
-				extraArgs = args[dashAt:]
-				args = args[:dashAt]
-			}
+func init() {
+	runCmd.Flags().StringVar(&runProfile, "profile", "", "use a specific profile instead of active")
+	runCmd.Flags().BoolVar(&runNoSync, "no-sync", false, "launch without syncing")
+	runCmd.Flags().BoolVar(&runDryRun, "dry-run", false, "show sync plan and launch command without executing")
+	rootCmd.AddCommand(runCmd)
+}
 
-			if len(args) == 0 {
-				return fmt.Errorf("project name required")
-			}
-
-			projectName := args[0]
-			proj, ok := a.svc.GetProject(projectName)
-			if !ok {
-				return hysterr.ProjectNotFound(projectName)
-			}
-
-			// If --profile specified, set it as active before syncing.
-			if profileName != "" {
-				if err := a.svc.SetActiveProfile(projectName, profileName); err != nil {
-					return fmt.Errorf("setting profile: %w", err)
-				}
-				// Reload project after profile change.
-				proj, _ = a.svc.GetProject(projectName)
-			}
-
-			// If an explicit client is specified, use it directly instead of syncAndLaunch.
-			if len(args) > 1 {
-				execName := args[1]
-
-				workDir := proj.Path
-				if workDir == "" || workDir == "~" {
-					var err error
-					workDir, err = os.Getwd()
-					if err != nil {
-						return fmt.Errorf("getting current directory: %w", err)
-					}
-				}
-
-				if info, err := os.Stat(workDir); err != nil {
-					return fmt.Errorf("project directory %q: %w", workDir, err)
-				} else if !info.IsDir() {
-					return fmt.Errorf("project path %q is not a directory", workDir)
-				}
-
-				if !noSync {
-					results, err := a.svc.SyncProject(projectName)
-					if err != nil {
-						return fmt.Errorf("sync failed: %w", err)
-					}
-					printSyncResults(cmd, projectName, results)
-				}
-
-				if dryRun {
-					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Would run: %s %v\n", execName, extraArgs)
-					_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "Directory: %s\n", workDir)
-					return nil
-				}
-
-				execPath, err := launch.ResolveExecutable(execName)
-				if err != nil {
-					return err
-				}
-
-				return launch.Exec(execPath, extraArgs, workDir)
-			}
-
-			// Default client: use shared helper (explicit run = use project path).
-			return a.syncAndLaunch(cmd, proj, extraArgs, noSync, dryRun, false)
-		},
+func runRun(cmd *cobra.Command, args []string) error {
+	if len(args) == 0 {
+		return fmt.Errorf("project name is required")
 	}
 
-	cmd.Flags().BoolVar(&noSync, "no-sync", false, "skip the sync step")
-	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print what would happen without executing")
-	cmd.Flags().StringVar(&profileName, "profile", "", "use a specific profile for this run")
+	projectName := args[0]
+	var extraArgs []string
+	dashIdx := cmd.ArgsLenAtDash()
+	if dashIdx >= 0 {
+		extraArgs = args[dashIdx:]
+	}
 
-	return cmd
+	svc, err := buildService()
+	if err != nil {
+		return err
+	}
+
+	// Fail fast if claude not in PATH
+	clientCmd := launch.DefaultClientCommand()
+	if !runDryRun {
+		if _, err := launch.FindClient(clientCmd); err != nil {
+			return err
+		}
+	}
+
+	// Override active profile if --profile flag is set
+	if runProfile != "" {
+		if err := svc.SetActiveProfile(projectName, runProfile); err != nil {
+			return fmt.Errorf("setting profile %q: %w", runProfile, err)
+		}
+	}
+
+	proj, ok := svc.GetProject(projectName)
+	if !ok {
+		return fmt.Errorf("project %q not found", projectName)
+	}
+
+	if runDryRun {
+		return dryRun(cmd, svc, projectName, clientCmd, proj.Path, extraArgs)
+	}
+
+	// Post-exit loop (S-054)
+	for {
+		if !runNoSync {
+			results, err := svc.SyncProject(projectName)
+			if err != nil {
+				return fmt.Errorf("sync failed: %w", err)
+			}
+			if err := printSyncResults(cmd, results); err != nil {
+				return err
+			}
+		}
+
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Launching %s in %s...\n", clientCmd, proj.Path); err != nil {
+			return err
+		}
+
+		launchArgs := extraArgs
+		err := launch.RunCommand(clientCmd, launchArgs, proj.Path)
+
+		exitCode := 0
+		if err != nil {
+			if exitErr, ok := err.(*exec.ExitError); ok {
+				exitCode = exitErr.ExitCode()
+			} else {
+				return fmt.Errorf("launch failed: %w", err)
+			}
+		}
+
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "\nClaude exited (code %d). What next?\n", exitCode); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "  [R]elaunch  [C]onfigure  [Q]uit"); err != nil {
+			return err
+		}
+
+		action := readPostExitChoice(cmd)
+
+		switch action {
+		case "r":
+			runNoSync = false // re-sync on relaunch
+			continue
+		case "c":
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), "  Configure mode not yet available (requires TUI)."); err != nil {
+				return err
+			}
+			continue
+		default:
+			return nil
+		}
+	}
+}
+
+func dryRun(cmd *cobra.Command, svc *service.Service, projectName, clientCmd, projectPath string, extraArgs []string) error {
+	results, err := svc.DryRunSync(projectName)
+	if err != nil {
+		return fmt.Errorf("sync failed: %w", err)
+	}
+
+	if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Sync plan:"); err != nil {
+		return err
+	}
+	if err := printSyncResults(cmd, results); err != nil {
+		return err
+	}
+
+	launchParts := []string{clientCmd}
+	launchParts = append(launchParts, extraArgs...)
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "\nWould launch: %s\n", strings.Join(launchParts, " ")); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Working dir:  %s\n", projectPath); err != nil {
+		return err
+	}
+	return nil
+}
+
+func printSyncResults(cmd *cobra.Command, results []service.SyncResult) error {
+	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	for _, r := range results {
+		if _, err := fmt.Fprintf(w, "  %s\t%s\n", r.Name, r.Action); err != nil {
+			return err
+		}
+	}
+	return w.Flush()
+}
+
+// readPostExitChoice reads from cmd.InOrStdin() for testability.
+func readPostExitChoice(cmd *cobra.Command) string {
+	if _, err := fmt.Fprint(cmd.OutOrStdout(), "  Choice: "); err != nil {
+		return "q" // write error = quit
+	}
+
+	reader := bufio.NewReader(cmd.InOrStdin())
+	input, err := reader.ReadString('\n')
+	if err != nil {
+		return "q" // EOF or error = quit
+	}
+	return strings.TrimSpace(strings.ToLower(input))
 }

@@ -2,22 +2,55 @@ package deploy
 
 import (
 	"encoding/json"
-	"fmt"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 
-	"github.com/lcrostarosa/hystak/internal/model"
+	"github.com/hystak/hystak/internal/config"
+	"github.com/hystak/hystak/internal/model"
 )
 
-// ClaudeCodeDeployer reads and writes MCP server configs for Claude Code.
-//
-// Two scopes:
-//   - Project scope: .mcp.json in the project directory
-//   - Global scope: ~/.claude.json (when projectPath is empty or "~")
+// Compile-time interface check.
+var _ Deployer = (*ClaudeCodeDeployer)(nil)
+
+// ClaudeCodeDeployer deploys MCP servers to Claude Code's .mcp.json.
 type ClaudeCodeDeployer struct{}
 
-// claudeCodeServer is the JSON representation of a server in Claude Code config.
-type claudeCodeServer struct {
+func (d *ClaudeCodeDeployer) ClientType() model.ClientType {
+	return model.ClientClaudeCode
+}
+
+func (d *ClaudeCodeDeployer) ConfigPath(projectPath string) string {
+	return filepath.Join(projectPath, ".mcp.json")
+}
+
+// Bootstrap ensures .mcp.json exists with an empty mcpServers object.
+func (d *ClaudeCodeDeployer) Bootstrap(projectPath string) error {
+	path := d.ConfigPath(projectPath)
+	_, err := os.Stat(path)
+	switch {
+	case err == nil:
+		return nil
+	case errors.Is(err, fs.ErrNotExist):
+		// create it
+	default:
+		return err
+	}
+
+	raw := map[string]interface{}{
+		"mcpServers": map[string]interface{}{},
+	}
+	data, err := json.MarshalIndent(raw, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return config.AtomicWrite(path, data, 0o644)
+}
+
+// mcpServerJSON is the JSON representation of a single MCP server in .mcp.json.
+type mcpServerJSON struct {
 	Type    string            `json:"type"`
 	Command string            `json:"command,omitempty"`
 	Args    []string          `json:"args,omitempty"`
@@ -26,147 +59,93 @@ type claudeCodeServer struct {
 	Headers map[string]string `json:"headers,omitempty"`
 }
 
-func (d *ClaudeCodeDeployer) ClientType() model.ClientType {
-	return model.ClientClaudeCode
-}
-
-// ConfigPath returns the config file path.
-// Empty or "~" projectPath means global scope (~/.claude.json).
-// Otherwise, returns <projectPath>/.mcp.json.
-func (d *ClaudeCodeDeployer) ConfigPath(projectPath string) string {
-	if isGlobalScope(projectPath) {
-		home, _ := os.UserHomeDir()
-		return filepath.Join(home, ".claude.json")
-	}
-	return filepath.Join(projectPath, ".mcp.json")
-}
-
-// ReadServers reads MCP servers from the Claude Code config file.
+// ReadServers reads currently deployed MCP servers from .mcp.json.
 func (d *ClaudeCodeDeployer) ReadServers(projectPath string) (map[string]model.ServerDef, error) {
-	configPath := d.ConfigPath(projectPath)
-
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return map[string]model.ServerDef{}, nil
-		}
-		return nil, fmt.Errorf("reading %s: %w", configPath, err)
+	path := d.ConfigPath(projectPath)
+	data, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		// file exists
+	case errors.Is(err, fs.ErrNotExist):
+		return make(map[string]model.ServerDef), nil
+	default:
+		return nil, err
 	}
 
-	// Parse into a generic structure to extract mcpServers.
 	var raw map[string]json.RawMessage
 	if err := json.Unmarshal(data, &raw); err != nil {
-		return nil, fmt.Errorf("parsing %s: %w", configPath, err)
+		return nil, err
 	}
 
 	serversRaw, ok := raw["mcpServers"]
 	if !ok {
-		return map[string]model.ServerDef{}, nil
+		return make(map[string]model.ServerDef), nil
 	}
 
-	var ccServers map[string]claudeCodeServer
-	if err := json.Unmarshal(serversRaw, &ccServers); err != nil {
-		return nil, fmt.Errorf("parsing mcpServers in %s: %w", configPath, err)
+	var servers map[string]mcpServerJSON
+	if err := json.Unmarshal(serversRaw, &servers); err != nil {
+		return nil, err
 	}
 
-	result := make(map[string]model.ServerDef, len(ccServers))
-	for name, ccs := range ccServers {
-		result[name] = fromClaudeCode(name, ccs)
+	result := make(map[string]model.ServerDef, len(servers))
+	for name, s := range servers {
+		result[name] = model.ServerDef{
+			Name:      name,
+			Transport: model.Transport(s.Type),
+			Command:   s.Command,
+			Args:      s.Args,
+			Env:       s.Env,
+			URL:       s.URL,
+			Headers:   s.Headers,
+		}
 	}
 	return result, nil
 }
 
-// WriteServers writes MCP servers to the Claude Code config file,
-// preserving all non-mcpServers keys.
+// WriteServers writes the full server map to .mcp.json.
+// Non-mcpServers keys in the existing file are preserved (S-038).
+// The caller (service layer) is responsible for merging managed and
+// unmanaged servers before calling this method.
 func (d *ClaudeCodeDeployer) WriteServers(projectPath string, servers map[string]model.ServerDef) error {
-	configPath := d.ConfigPath(projectPath)
+	path := d.ConfigPath(projectPath)
 
-	// Read existing file to preserve other keys.
-	var raw map[string]json.RawMessage
-	data, err := os.ReadFile(configPath)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return fmt.Errorf("reading %s: %w", configPath, err)
+	// Read existing file to preserve non-mcpServers keys
+	var existing map[string]json.RawMessage
+	data, err := os.ReadFile(path)
+	switch {
+	case err == nil:
+		if err := json.Unmarshal(data, &existing); err != nil {
+			return err
 		}
-		raw = make(map[string]json.RawMessage)
-	} else {
-		if err := json.Unmarshal(data, &raw); err != nil {
-			return fmt.Errorf("parsing %s: %w", configPath, err)
-		}
+	case errors.Is(err, fs.ErrNotExist):
+		existing = make(map[string]json.RawMessage)
+	default:
+		return err
 	}
 
-	// Convert servers to Claude Code format.
-	ccServers := make(map[string]claudeCodeServer, len(servers))
+	// Build the mcpServers object
+	mcpServers := make(map[string]mcpServerJSON, len(servers))
 	for name, srv := range servers {
-		ccServers[name] = toClaudeCode(srv)
+		mcpServers[name] = mcpServerJSON{
+			Type:    string(srv.Transport),
+			Command: srv.Command,
+			Args:    srv.Args,
+			Env:     srv.Env,
+			URL:     srv.URL,
+			Headers: srv.Headers,
+		}
 	}
 
-	serversJSON, err := json.Marshal(ccServers)
+	serversData, err := json.Marshal(mcpServers)
 	if err != nil {
-		return fmt.Errorf("marshaling mcpServers: %w", err)
+		return err
 	}
-	raw["mcpServers"] = serversJSON
+	existing["mcpServers"] = serversData
 
-	out, err := json.MarshalIndent(raw, "", "  ")
+	outData, err := json.MarshalIndent(existing, "", "  ")
 	if err != nil {
-		return fmt.Errorf("marshaling config: %w", err)
+		return err
 	}
-
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		return fmt.Errorf("creating directory for %s: %w", configPath, err)
-	}
-
-	if err := os.WriteFile(configPath, append(out, '\n'), 0o644); err != nil {
-		return fmt.Errorf("writing %s: %w", configPath, err)
-	}
-	return nil
-}
-
-// Bootstrap creates the config file if it doesn't exist.
-func (d *ClaudeCodeDeployer) Bootstrap(projectPath string) error {
-	configPath := d.ConfigPath(projectPath)
-
-	if _, err := os.Stat(configPath); err == nil {
-		return nil // already exists
-	}
-
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
-		return fmt.Errorf("creating directory for %s: %w", configPath, err)
-	}
-
-	content := []byte("{\"mcpServers\":{}}\n")
-	if err := os.WriteFile(configPath, content, 0o644); err != nil {
-		return fmt.Errorf("writing %s: %w", configPath, err)
-	}
-	return nil
-}
-
-// isGlobalScope returns true if the project path indicates global scope.
-func isGlobalScope(projectPath string) bool {
-	return projectPath == "" || projectPath == "~"
-}
-
-// toClaudeCode converts a canonical ServerDef to Claude Code JSON format.
-func toClaudeCode(s model.ServerDef) claudeCodeServer {
-	return claudeCodeServer{
-		Type:    string(s.Transport),
-		Command: s.Command,
-		Args:    s.Args,
-		Env:     s.Env,
-		URL:     s.URL,
-		Headers: s.Headers,
-	}
-}
-
-// fromClaudeCode converts a Claude Code JSON server to a canonical ServerDef.
-func fromClaudeCode(name string, ccs claudeCodeServer) model.ServerDef {
-	return model.ServerDef{
-		Name:      name,
-		Transport: model.Transport(ccs.Type),
-		Command:   ccs.Command,
-		Args:      ccs.Args,
-		Env:       ccs.Env,
-		URL:       ccs.URL,
-		Headers:   ccs.Headers,
-	}
+	outData = append(outData, '\n')
+	return config.AtomicWrite(path, outData, 0o644)
 }

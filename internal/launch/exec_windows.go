@@ -3,26 +3,21 @@
 package launch
 
 import (
-	"fmt"
 	"os"
-	"os/exec"
+	"os/signal"
 )
 
-// Exec launches the given executable in dir, forwarding stdio and exit code.
-// On Windows, syscall.Exec (execve) is not available, so we spawn a child process instead.
-func Exec(executable string, args []string, dir string) error {
-	cmd := exec.Command(executable, args...)
-	cmd.Dir = dir
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+var signalChan chan os.Signal
 
-	if err := cmd.Run(); err != nil {
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			os.Exit(exitErr.ExitCode())
-		}
-		return fmt.Errorf("running %q: %w", executable, err)
-	}
-	os.Exit(0)
-	return nil // unreachable
+// ignoreSignals causes the parent to ignore interrupt signals
+// while a child process is running.
+func ignoreSignals() {
+	signalChan = make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt)
+}
+
+// restoreSignals restores default signal handling.
+func restoreSignals() {
+	signal.Stop(signalChan)
+	signal.Reset(os.Interrupt)
 }

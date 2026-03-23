@@ -2,75 +2,203 @@ package cli
 
 import (
 	"fmt"
-	"sort"
+	"os"
+	"text/tabwriter"
 
-	"github.com/lcrostarosa/hystak/internal/service"
+	"github.com/hystak/hystak/internal/backup"
+	"github.com/hystak/hystak/internal/deploy"
+	"github.com/hystak/hystak/internal/model"
+	"github.com/hystak/hystak/internal/profile"
+	"github.com/hystak/hystak/internal/project"
+	"github.com/hystak/hystak/internal/registry"
+	"github.com/hystak/hystak/internal/service"
 	"github.com/spf13/cobra"
 )
 
-func (a *cliApp) newSyncCmd() *cobra.Command {
-	var (
-		all         bool
-		profileName string
-	)
+var (
+	syncAll     bool
+	syncProfile string
+	syncDryRun  bool
+	syncForce   bool
+)
 
-	cmd := &cobra.Command{
-		Use:   "sync [project]",
-		Short: "Sync server configs to client config files",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if all {
-				results, err := a.svc.SyncAll()
-				if err != nil {
-					return err
-				}
-				names := make([]string, 0, len(results))
-				for name := range results {
-					names = append(names, name)
-				}
-				sort.Strings(names)
-				for _, name := range names {
-					printSyncResults(cmd, name, results[name])
-				}
-				return nil
-			}
-
-			if len(args) == 0 {
-				return fmt.Errorf("project name required (or use --all)")
-			}
-
-			projectName := args[0]
-
-			// If --profile specified, sync that specific profile.
-			if profileName != "" {
-				results, err := a.svc.SyncProfile(projectName, profileName)
-				if err != nil {
-					return err
-				}
-				printSyncResults(cmd, projectName, results)
-				return nil
-			}
-
-			// Default: sync using active profile (or legacy direct assignments).
-			results, err := a.svc.SyncProject(projectName)
-			if err != nil {
-				return err
-			}
-			printSyncResults(cmd, projectName, results)
-			return nil
-		},
-	}
-
-	cmd.Flags().BoolVar(&all, "all", false, "sync all projects")
-	cmd.Flags().StringVar(&profileName, "profile", "", "sync using a specific profile")
-
-	return cmd
+var syncCmd = &cobra.Command{
+	Use:         "sync [project]",
+	Short:       "Deploy project configs",
+	Long:        "Resolve the active profile and deploy MCP servers to client config files.",
+	Args:        cobra.MaximumNArgs(1),
+	Annotations: map[string]string{"mutates": "true"},
+	RunE:        runSync,
 }
 
-func printSyncResults(cmd *cobra.Command, project string, results []service.SyncResult) {
-	out := cmd.OutOrStdout()
-	_, _ = fmt.Fprintf(out, "Project: %s\n", project)
-	for _, r := range results {
-		_, _ = fmt.Fprintf(out, "  %-20s %s\n", r.ServerName, r.Action)
+func init() {
+	syncCmd.Flags().BoolVar(&syncAll, "all", false, "sync all projects (S-034)")
+	syncCmd.Flags().StringVar(&syncProfile, "profile", "", "use a specific profile (S-035)")
+	syncCmd.Flags().BoolVar(&syncDryRun, "dry-run", false, "show sync plan without writing (S-036)")
+	syncCmd.Flags().BoolVar(&syncForce, "force", false, "skip preflight conflict checks")
+	rootCmd.AddCommand(syncCmd)
+}
+
+func runSync(cmd *cobra.Command, args []string) error {
+	if !syncAll && len(args) == 0 {
+		return fmt.Errorf("project name is required (or use --all)")
 	}
+
+	svc, err := buildService()
+	if err != nil {
+		return err
+	}
+
+	if syncAll {
+		return runSyncAll(cmd, svc)
+	}
+
+	projectName := args[0]
+
+	// S-035: Override active profile if --profile flag is set
+	if syncProfile != "" {
+		if err := svc.SetActiveProfile(projectName, syncProfile); err != nil {
+			return fmt.Errorf("setting profile %q: %w", syncProfile, err)
+		}
+	}
+
+	// S-046: Preflight conflict check (unless --force)
+	if !syncForce && !syncDryRun {
+		conflicts, prefErr := svc.PreflightCheck(projectName)
+		if prefErr != nil {
+			return fmt.Errorf("preflight check: %w", prefErr)
+		}
+		if len(conflicts) > 0 {
+			if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Preflight conflicts (%d):\n", len(conflicts)); err != nil {
+				return err
+			}
+			for _, c := range conflicts {
+				if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "  %s: %s\n", c.Path, c.Message); err != nil {
+					return err
+				}
+			}
+			return fmt.Errorf("resolve conflicts before syncing (or use --force to skip)")
+		}
+	}
+
+	var results []service.SyncResult
+	if syncDryRun {
+		results, err = svc.DryRunSync(projectName)
+	} else {
+		results, err = svc.SyncProject(projectName)
+	}
+	if err != nil {
+		return err
+	}
+
+	if syncDryRun {
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Dry run (no changes written):"); err != nil {
+			return err
+		}
+	}
+
+	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	for _, r := range results {
+		if _, err := fmt.Fprintf(w, "%s\t%s\n", r.Name, r.Action); err != nil {
+			return err
+		}
+	}
+	return w.Flush()
+}
+
+// runSyncAll syncs every registered project (S-034).
+func runSyncAll(cmd *cobra.Command, svc *service.Service) error {
+	projects := svc.ListProjects()
+	if len(projects) == 0 {
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "No projects registered."); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	for _, p := range projects {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "--- %s ---\n", p.Name); err != nil {
+			return err
+		}
+
+		var results []service.SyncResult
+		var err error
+		if syncDryRun {
+			results, err = svc.DryRunSync(p.Name)
+		} else {
+			results, err = svc.SyncProject(p.Name)
+		}
+		if err != nil {
+			if _, wErr := fmt.Fprintf(cmd.ErrOrStderr(), "  error: %v\n", err); wErr != nil {
+				return wErr
+			}
+			continue
+		}
+
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		for _, r := range results {
+			if _, err := fmt.Fprintf(w, "  %s\t%s\n", r.Name, r.Action); err != nil {
+				return err
+			}
+		}
+		if err := w.Flush(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// buildService creates a fully wired Service from default config paths.
+func buildService() (*service.Service, error) {
+	reg, err := registry.LoadDefault()
+	if err != nil {
+		return nil, fmt.Errorf("loading registry: %w", err)
+	}
+
+	projStore, err := project.LoadDefault()
+	if err != nil {
+		return nil, fmt.Errorf("loading projects: %w", err)
+	}
+
+	profMgr := profile.NewDefaultManager()
+
+	dep, ok := deploy.NewDeployer(model.ClientClaudeCode)
+	if !ok {
+		return nil, fmt.Errorf("no deployer for %s", model.ClientClaudeCode)
+	}
+
+	svc := service.New(reg, projStore, profMgr, dep)
+	svc.WithBackup(backup.NewDefaultManager())
+	svc.WithResourceDeployers(
+		&deploy.SkillsDeployer{},
+		&deploy.SettingsDeployer{},
+		&deploy.ClaudeMDDeployer{},
+	)
+	return svc, nil
+}
+
+// buildServiceReadOnly creates a Service for read-only operations.
+// Errors to stderr if non-critical components fail.
+func buildServiceReadOnly() (*service.Service, error) {
+	reg, err := registry.LoadDefault()
+	if err != nil {
+		return nil, fmt.Errorf("loading registry: %w", err)
+	}
+
+	projStore, err := project.LoadDefault()
+	if err != nil {
+		if _, wErr := fmt.Fprintf(os.Stderr, "warning: loading projects: %v\n", err); wErr != nil {
+			return nil, wErr
+		}
+		projStore = project.NewStore()
+	}
+
+	profMgr := profile.NewDefaultManager()
+
+	dep, ok := deploy.NewDeployer(model.ClientClaudeCode)
+	if !ok {
+		return nil, fmt.Errorf("no deployer for %s", model.ClientClaudeCode)
+	}
+
+	return service.New(reg, projStore, profMgr, dep), nil
 }

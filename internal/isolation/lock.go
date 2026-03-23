@@ -1,80 +1,113 @@
 package isolation
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"syscall"
 )
 
-const lockFileName = ".hystak.lock"
-
-// LockManager manages per-project lock files for preventing concurrent sessions.
+// LockManager implements lock-based isolation (S-065).
+// Creates .hystak.lock with PID, detects held locks, cleans stale locks.
 type LockManager struct{}
 
-// NewLockManager creates a new LockManager.
-func NewLockManager() *LockManager {
-	return &LockManager{}
-}
+// lockFileName is the lock file name within a project directory.
+const lockFileName = ".hystak.lock"
 
-func lockPath(projectPath string) string {
+// LockPath returns the lock file path for a project.
+func LockPath(projectPath string) string {
 	return filepath.Join(projectPath, lockFileName)
 }
 
-// Acquire creates a lock file with the current PID.
-// Returns an error if the project is already locked by a running process.
-func (m *LockManager) Acquire(projectPath string) error {
-	locked, pid, err := m.IsLocked(projectPath)
-	if err != nil {
-		return err
-	}
-	if locked {
-		return fmt.Errorf("project is locked by PID %d", pid)
+// Acquire attempts to acquire a lock for the project. Returns an error
+// if the lock is held by a running process. Cleans stale locks automatically.
+func (lm *LockManager) Acquire(projectPath string) error {
+	lockPath := LockPath(projectPath)
+
+	data, err := os.ReadFile(lockPath)
+	switch {
+	case err == nil:
+		// Lock file exists — check if holder is alive
+		pid, parseErr := strconv.Atoi(strings.TrimSpace(string(data)))
+		if parseErr == nil && isProcessRunning(pid) {
+			return fmt.Errorf("lock held by PID %d at %s", pid, lockPath)
+		}
+		// Stale lock — clean it up
+		if err := os.Remove(lockPath); err != nil {
+			return fmt.Errorf("cleaning stale lock: %w", err)
+		}
+	case errors.Is(err, fs.ErrNotExist):
+		// No lock, proceed
+	default:
+		return fmt.Errorf("reading lock file: %w", err)
 	}
 
-	data := []byte(strconv.Itoa(os.Getpid()))
-	if err := os.WriteFile(lockPath(projectPath), data, 0o644); err != nil {
+	// Write our PID
+	pid := os.Getpid()
+	if err := os.WriteFile(lockPath, []byte(strconv.Itoa(pid)), 0o644); err != nil {
 		return fmt.Errorf("writing lock file: %w", err)
 	}
-
 	return nil
 }
 
-// Release removes the lock file.
-func (m *LockManager) Release(projectPath string) error {
-	path := lockPath(projectPath)
-	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("removing lock file: %w", err)
-	}
-	return nil
-}
+// Release removes the lock file if it's owned by the current process.
+func (lm *LockManager) Release(projectPath string) error {
+	lockPath := LockPath(projectPath)
 
-// IsLocked checks if the project is locked by a running process.
-// A stale lock (PID no longer running) is automatically released.
-// Returns (locked, pid, error).
-func (m *LockManager) IsLocked(projectPath string) (bool, int, error) {
-	data, err := os.ReadFile(lockPath(projectPath))
+	data, err := os.ReadFile(lockPath)
 	if err != nil {
-		if os.IsNotExist(err) {
-			return false, 0, nil
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil // already released
 		}
-		return false, 0, fmt.Errorf("reading lock file: %w", err)
+		return err
 	}
 
 	pid, err := strconv.Atoi(strings.TrimSpace(string(data)))
 	if err != nil {
-		// Malformed lock file — remove it.
-		_ = os.Remove(lockPath(projectPath))
+		// Corrupt lock file — remove it
+		return os.Remove(lockPath)
+	}
+
+	if pid != os.Getpid() {
+		return fmt.Errorf("lock owned by PID %d, not current process %d", pid, os.Getpid())
+	}
+
+	return os.Remove(lockPath)
+}
+
+// IsLocked reports whether the project lock is held by a running process.
+func (lm *LockManager) IsLocked(projectPath string) (bool, int, error) {
+	lockPath := LockPath(projectPath)
+
+	data, err := os.ReadFile(lockPath)
+	switch {
+	case err == nil:
+		pid, parseErr := strconv.Atoi(strings.TrimSpace(string(data)))
+		if parseErr != nil {
+			return false, 0, nil // corrupt, treat as unlocked
+		}
+		if isProcessRunning(pid) {
+			return true, pid, nil
+		}
+		return false, 0, nil // stale
+	case errors.Is(err, fs.ErrNotExist):
 		return false, 0, nil
+	default:
+		return false, 0, err
 	}
+}
 
-	// Check if the process is still running.
-	if isProcessRunning(pid) {
-		return true, pid, nil
+// isProcessRunning checks if a process with the given PID is alive
+// using kill(pid, 0) which checks existence without sending a signal.
+func isProcessRunning(pid int) bool {
+	process, err := os.FindProcess(pid)
+	if err != nil {
+		return false
 	}
-
-	// Stale lock — remove it.
-	_ = os.Remove(lockPath(projectPath))
-	return false, 0, nil
+	err = process.Signal(syscall.Signal(0))
+	return err == nil
 }

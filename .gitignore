@@ -4,3 +4,4 @@ dist/
 .claude/skills/
 coverage.out
 coverage.html
+e2e/actual/

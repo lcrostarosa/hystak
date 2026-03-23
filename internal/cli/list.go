@@ -4,27 +4,47 @@ import (
 	"fmt"
 	"text/tabwriter"
 
+	"github.com/hystak/hystak/internal/model"
 	"github.com/spf13/cobra"
 )
 
-func (a *cliApp) newListCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "list",
-		Short: "List registry servers",
-		Args:  cobra.NoArgs,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			servers := a.svc.ListServers()
-			if len(servers) == 0 {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No servers in registry.")
-				return nil
-			}
+var listCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List registered MCP servers",
+	Long:  "Print a tab-separated table of all MCP servers in the registry.",
+	RunE:  runList,
+}
 
-			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-			_, _ = fmt.Fprintln(w, "NAME\tTRANSPORT\tCOMMAND/URL")
-			for _, s := range servers {
-				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\n", s.Name, s.Transport, s.Target())
-			}
-			return w.Flush()
-		},
+func init() {
+	rootCmd.AddCommand(listCmd)
+}
+
+func runList(cmd *cobra.Command, args []string) error {
+	svc, err := buildServiceReadOnly()
+	if err != nil {
+		return err
+	}
+
+	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	if _, err := fmt.Fprintln(w, "NAME\tTRANSPORT\tCOMMAND/URL"); err != nil {
+		return err
+	}
+
+	for _, s := range svc.ListServers() {
+		endpoint := commandOrURL(s)
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\n", s.Name, s.Transport, endpoint); err != nil {
+			return err
+		}
+	}
+
+	return w.Flush()
+}
+
+func commandOrURL(s model.ServerDef) string {
+	switch s.Transport {
+	case model.TransportSSE, model.TransportHTTP:
+		return s.URL
+	default:
+		return s.Command
 	}
 }

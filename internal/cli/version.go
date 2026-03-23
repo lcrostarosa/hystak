@@ -6,19 +6,22 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func newVersionCmd(version, commit, date string) *cobra.Command {
-	return &cobra.Command{
-		Use:   "version",
-		Short: "Print version information",
-		Args:  cobra.NoArgs,
-		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			return nil
-		},
-		Run: func(cmd *cobra.Command, args []string) {
-			out := cmd.OutOrStdout()
-			_, _ = fmt.Fprintf(out, "hystak %s\n", version)
-			_, _ = fmt.Fprintf(out, "  commit: %s\n", commit)
-			_, _ = fmt.Fprintf(out, "  built:  %s\n", date)
-		},
-	}
+// Build-time variables set via ldflags.
+var (
+	version = "dev"
+	commit  = "unknown"
+	date    = "unknown"
+)
+
+var versionCmd = &cobra.Command{
+	Use:   "version",
+	Short: "Print version information",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		_, err := fmt.Fprintf(cmd.OutOrStdout(), "hystak %s\ncommit: %s\nbuilt:  %s\n", version, commit, date)
+		return err
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(versionCmd)
 }

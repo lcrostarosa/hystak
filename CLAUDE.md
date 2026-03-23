@@ -1,57 +1,63 @@
-# CLAUDE.md
+# hystak
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+Go CLI/TUI tool that manages MCP server configurations from a central registry and deploys them to Claude Code project configs.
 
-## What is hystak
-
-hystak is a Go CLI/TUI tool that manages MCP (Model Context Protocol) server configurations from a central registry and deploys them to MCP client config files. Single binary, zero runtime dependencies.
-
-## Build & Test Commands
+## Build & Test
 
 ```bash
-go build -o hystak .                  # build binary
-go test ./...                         # run all tests
-go test ./internal/registry/          # run tests for a single package
-go test ./internal/registry/ -run TestAdd  # run a single test
-go run .                              # launch TUI (if terminal) or show help
-go run . list                         # run a CLI subcommand
+make build          # Build binary
+make test           # go test -short ./...
+make test-race      # go test -race ./...
+make test-all       # go test ./... (includes integration)
+make test-update    # UPDATE_GOLDEN=1 go test ./internal/tui/...
+make test-cover     # Coverage report → coverage.out + HTML
+make lint           # staticcheck + go vet
+make e2e            # VHS tape E2E tests
 ```
 
-No Makefile, linter, or CI yet — standard `go build`/`go test` workflow.
-
-## Architecture
-
-Layered architecture following the Glow pattern (Charmbracelet):
+## Project Structure
 
 ```
-main.go → cli/ (Cobra root dispatcher)
-              ├── no args + terminal → tui/ (Bubble Tea)
-              └── subcommand → cli/ handlers
-                       ↓
-                  service/ (all business logic)
-                       ↓
-            ┌──────────┼──────────┐
-         registry/   project/   deploy/
-         (YAML)      (YAML)     (Deployer interface)
+internal/
+├── backup/      Config snapshot engine
+├── catalog/     Built-in curated server/skill/hook catalog
+├── cli/         Cobra command tree
+├── config/      XDG paths, user config
+├── deploy/      Deployer + ResourceDeployer implementations
+├── discovery/   Auto-detection engine
+├── errors/      Custom error types
+├── isolation/   Worktree & lock-based concurrency
+├── keyconfig/   Keybinding configuration
+├── launch/      Client process execution (platform-specific)
+├── model/       Domain types implementing Resource interface
+├── profile/     Profile manager
+├── project/     Project store with resolution algorithm
+├── registry/    Generic Store[T] + Registry
+├── service/     Orchestration layer (sync, diff, import, discover, backup)
+└── tui/         Bubble Tea app
 ```
 
-- **`internal/model/`** — Domain types shared by all packages: `ServerDef`, `ServerOverride`, `Project`, `MCPAssignment`, `Transport`, `ClientType`, `DriftStatus`. `MCPAssignment` has custom YAML marshal/unmarshal for dual format (bare string or map with overrides).
-- **`internal/registry/`** — Server catalog CRUD and tag group management. Reads/writes `~/.config/hystak/registry.yaml`.
-- **`internal/project/`** — Project store with server assignment and the resolution algorithm (tag expansion → dedup → override merge). Reads/writes `~/.config/hystak/projects.yaml`.
-- **`internal/deploy/`** — `Deployer` interface with client-specific implementations. v1 has Claude Code only (`claude_code.go`); `claude_desktop.go` and `cursor.go` are stubs. Each deployer translates hystak's canonical `ServerDef` to the client's expected JSON schema.
-- **`internal/service/`** — Orchestration: sync, drift detection, import, diff. Both CLI and TUI consume this layer. All business logic lives here, not in CLI/TUI.
-- **`internal/cli/`** — Cobra command tree. `PersistentPreRunE` initializes the shared `service.Service`. Root command dispatches to TUI when stdout is a terminal.
-- **`internal/tui/`** — Bubble Tea app with tab navigation (Servers/Projects), mode-based overlays (Form, Confirm, Diff, Import). Child-to-parent communication via custom `tea.Msg` types.
-- **`internal/config/`** — XDG-compliant config paths.
+## Key Conventions
 
-## Key Design Decisions
+- **Go 1.25.6**, CGO disabled, 7 direct dependencies
+- All writes to config files use `atomicWrite` (write-to-temp + fsync + rename)
+- Never assign errors to `_` — use `t.Fatal` in tests, propagate in production
+- Validate at write boundaries, trust internal invariants
+- Fail fast — no defensive nil checks for impossible states
+- `Store[T, PT]` generic serves all 6 resource types — don't duplicate CRUD
+- `ResourceDeployer` interface for skills, settings, CLAUDE.md — extend by implementing, not modifying
+- Bubble Tea: never do I/O in `Update` or constructors — use `tea.Cmd`
+- Table-driven tests by default, `Test<Subject>_<Scenario>` naming
+- Integration tests get `_Integration` suffix and `testing.Short()` guard
 
-- **Client config schemas differ** — env var syntax (`${VAR}` vs `${env:VAR}`), field presence (`type`), and extra fields (`disabled`, `autoApprove`) vary per client. Deployers must translate; there is no universal schema.
-- **Claude Code config locations** — `.mcp.json` (project scope) and `~/.claude.json` (global scope). NOT `settings.local.json`.
-- **Override merge rules** — `env`/`headers`: map merge (override keys win). `args`: replace entirely. `command`/`url`: replace if non-nil.
-- **Unmanaged servers** — servers in client configs but not in hystak are preserved during sync and flagged in the UI.
-- **Fail fast** — malformed configs and dangling references halt with errors, never silently degrade.
+## Standards Docs
 
-## Implementation Status
+Read before writing code:
 
-Steps 1-8 of 14 are complete (scaffolding through TUI root). Steps 9+ (TUI tab content, form overlays, goreleaser) are pending. See `specs/hystak/plan.md` for the full plan.
+- `coding-standards.md` — Anti-patterns and rules for production code
+- `testing-standards.md` — Anti-patterns and rules for test code
+- `architecture.md` — Design patterns, package responsibilities, extensibility
+- `data-model.md` — YAML/JSON schemas, file paths, validation rules
+- `tui-wireframes.md` — TUI layout, overlays, color scheme
+- `prd-revised.md` — Full feature specs (87 stories)
+- `story-map.md` — Priority map (P0–P3) and milestones

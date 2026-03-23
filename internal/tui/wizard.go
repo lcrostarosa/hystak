@@ -2,815 +2,346 @@ package tui
 
 import (
 	"fmt"
-	"os"
-	"path/filepath"
+	"sort"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/key"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/lcrostarosa/hystak/internal/catalog"
-	"github.com/lcrostarosa/hystak/internal/config"
-	"github.com/lcrostarosa/hystak/internal/keyconfig"
-	"github.com/lcrostarosa/hystak/internal/model"
-	"github.com/lcrostarosa/hystak/internal/service"
+	"github.com/hystak/hystak/internal/model"
+	"github.com/hystak/hystak/internal/service"
 )
 
-// wizardStep tracks the current step in the setup wizard.
+// wizardStep identifies the current step in the sequential launch wizard.
 type wizardStep int
 
 const (
-	wizardWelcome wizardStep = iota
-	wizardKeybindingProfile
-	wizardScanResult
-	wizardCatalog
-	wizardProjectForm
-	wizardSummary
-	wizardDone
+	wizardStepMCPs    wizardStep = iota // Step 1: Select MCPs
+	wizardStepOptions                   // Step 2: Quick options (skills, permissions, hooks)
+	wizardStepReview                    // Step 3: Review & launch
+	wizardStepCount
 )
 
-// catalogSection identifies which entity type is shown in the catalog browser.
-type catalogSection int
+// wizardModel implements the sequential launch wizard (S-060).
+type wizardModel struct {
+	keys        KeyMap
+	svc         *service.Service
+	projectName string
+	profileName string
+	step        wizardStep
+	cursor      int
 
-const (
-	catMCPs catalogSection = iota
-	catSkills
-	catHooks
-	catPermissions
-	catSectionCount
-)
+	// Step 1: MCPs
+	allMCPs     []string
+	selectedMCP map[string]bool
 
-var catSectionLabels = []string{"MCPs", "Skills", "Hooks", "Permissions"}
-
-// scanCompleteMsg is sent when the config scan finishes.
-type scanCompleteMsg struct {
-	results []service.ConfigScanResult
+	// Step 2: Options
+	allSkills     []string
+	allPerms      []string
+	allHooks      []string
+	selectedSkill map[string]bool
+	selectedPerm  map[string]bool
+	selectedHook  map[string]bool
 }
 
-// WizardModel is the setup wizard for first-time and on-demand configuration.
-type WizardModel struct {
-	service *service.Service
-	step    wizardStep
-	width   int
-	height  int
-	err     string
-
-	// Scan results (import step)
-	scanResults   []service.ConfigScanResult
-	allCandidates []service.ImportCandidate
-	scanSelected  []bool
-	scanCursor    int
-
-	// Catalog (browse step)
-	cat            catalog.Catalog
-	catSection     catalogSection
-	catCursors     [catSectionCount]int
-	catSelectedMCP []bool
-	catSelectedSk  []bool
-	catSelectedHk  []bool
-	catSelectedPm  []bool
-
-	// Project form
-	nameInput    textinput.Model
-	pathInput    textinput.Model
-	focused      int  // 0 = name, 1 = path
-	nameModified bool // true once user manually edits the name
-
-	// Keybinding profile
-	keyProfileCursor int
-	keyProfiles      []string
-
-	// Outcome
-	completed     bool
-	importedCount int
-	catalogCount  int
-	projectName   string
-}
-
-// Completed returns true if the wizard finished setup (vs. being skipped).
-func (m WizardModel) Completed() bool { return m.completed }
-
-// NewWizardModel creates a new setup wizard.
-func NewWizardModel(svc *service.Service) WizardModel {
-	ni := textinput.New()
-	ni.Placeholder = "my-project"
-	ni.Prompt = "  "
-	ni.CharLimit = 128
-
-	pi := textinput.New()
-	pi.Placeholder = "/path/to/project"
-	pi.Prompt = "  "
-	pi.CharLimit = 512
-	if cwd, err := os.Getwd(); err == nil {
-		pi.SetValue(cwd)
-		ni.SetValue(filepath.Base(cwd))
+func newWizardModel(keys KeyMap, svc *service.Service, projectName, profileName string) wizardModel {
+	w := wizardModel{
+		keys:          keys,
+		svc:           svc,
+		projectName:   projectName,
+		profileName:   profileName,
+		selectedMCP:   make(map[string]bool),
+		selectedSkill: make(map[string]bool),
+		selectedPerm:  make(map[string]bool),
+		selectedHook:  make(map[string]bool),
 	}
 
-	cat := catalog.Load()
+	// Pre-load registry items
+	for _, s := range svc.ListServers() {
+		w.allMCPs = append(w.allMCPs, s.Name)
+	}
+	for _, s := range svc.ListSkills() {
+		w.allSkills = append(w.allSkills, s.Name)
+	}
+	for _, p := range svc.ListPermissions() {
+		w.allPerms = append(w.allPerms, p.Name)
+	}
+	for _, h := range svc.ListHooks() {
+		w.allHooks = append(w.allHooks, h.Name)
+	}
 
-	return WizardModel{
-		service:        svc,
-		step:           wizardWelcome,
-		nameInput:      ni,
-		pathInput:      pi,
-		cat:            cat,
-		catSelectedMCP: make([]bool, len(cat.MCPs)),
-		catSelectedSk:  make([]bool, len(cat.Skills)),
-		catSelectedHk:  make([]bool, len(cat.Hooks)),
-		catSelectedPm:  make([]bool, len(cat.Permissions)),
-		keyProfiles:    keyconfig.PresetNames(),
+	// Pre-select from existing profile
+	if prof, err := svc.LoadProfile(profileName); err == nil {
+		for _, a := range prof.MCPs {
+			w.selectedMCP[a.Name] = true
+		}
+		for _, n := range prof.Skills {
+			w.selectedSkill[n] = true
+		}
+		for _, n := range prof.Permissions {
+			w.selectedPerm[n] = true
+		}
+		for _, n := range prof.Hooks {
+			w.selectedHook[n] = true
+		}
+	}
+
+	return w
+}
+
+func (w wizardModel) helpKeys() []HelpEntry {
+	switch w.step {
+	case wizardStepReview:
+		return []HelpEntry{{"Enter", "Launch"}, {"Esc", "Cancel"}}
+	default:
+		return []HelpEntry{{"Space", "Toggle"}, {"Enter", "Next"}, {"Esc", "Cancel"}}
 	}
 }
 
-func (m WizardModel) Init() tea.Cmd {
-	return nil
-}
-
-func (m WizardModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		m.width = msg.Width
-		m.height = msg.Height
-		inputWidth := clamp(m.width-10, 30, 70)
-		m.nameInput.Width = inputWidth
-		m.pathInput.Width = inputWidth
-		return m, tea.ClearScreen
-
-	case scanCompleteMsg:
-		m.scanResults = msg.results
-		for _, r := range msg.results {
-			m.allCandidates = append(m.allCandidates, r.Candidates...)
+func (w wizardModel) update(msg tea.KeyMsg) (wizardModel, tea.Cmd) {
+	switch {
+	case msg.String() == "esc":
+		return w, func() tea.Msg { return toolsWizardDoneMsg{} }
+	case key.Matches(msg, w.keys.ListUp):
+		if w.cursor > 0 {
+			w.cursor--
 		}
-		m.scanSelected = make([]bool, len(m.allCandidates))
-		for i := range m.scanSelected {
-			m.scanSelected[i] = true
+	case key.Matches(msg, w.keys.ListDown):
+		max := w.currentListLen() - 1
+		if w.cursor < max {
+			w.cursor++
 		}
-		if len(m.allCandidates) > 0 {
-			m.step = wizardScanResult
+	case key.Matches(msg, w.keys.Select):
+		w.toggleCurrent()
+	case key.Matches(msg, w.keys.Confirm):
+		if w.step < wizardStepReview {
+			w.step++
+			w.cursor = 0
 		} else {
-			m.step = wizardCatalog
+			return w, w.saveAndFinish()
 		}
-		return m, nil
-
-	case tea.KeyMsg:
-		switch m.step {
-		case wizardWelcome:
-			return m.updateWelcome(msg)
-		case wizardKeybindingProfile:
-			return m.updateKeybindingProfile(msg)
-		case wizardScanResult:
-			return m.updateScanResult(msg)
-		case wizardCatalog:
-			return m.updateCatalog(msg)
-		case wizardProjectForm:
-			return m.updateProjectForm(msg)
-		case wizardSummary:
-			return m.updateSummary(msg)
-		case wizardDone:
-			return m, tea.Quit
+	case msg.String() == "backspace" || msg.String() == "left":
+		if w.step > wizardStepMCPs {
+			w.step--
+			w.cursor = 0
 		}
 	}
-
-	if m.step == wizardProjectForm {
-		return m.updateTextInputs(msg)
-	}
-
-	return m, nil
+	return w, nil
 }
 
-// --- Step handlers ---
-
-func (m WizardModel) updateWelcome(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "enter":
-		m.step = wizardKeybindingProfile
-		return m, nil
-	case "esc", "q":
-		return m, tea.Quit
+func (w *wizardModel) toggleCurrent() {
+	switch w.step {
+	case wizardStepMCPs:
+		if w.cursor < len(w.allMCPs) {
+			name := w.allMCPs[w.cursor]
+			w.selectedMCP[name] = !w.selectedMCP[name]
+		}
+	case wizardStepOptions:
+		all, sel := w.currentOptionList()
+		if w.cursor < len(all) {
+			name := all[w.cursor]
+			sel[name] = !sel[name]
+		}
 	}
-	return m, nil
 }
 
-func (m WizardModel) updateKeybindingProfile(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "up", "k":
-		if m.keyProfileCursor > 0 {
-			m.keyProfileCursor--
-		}
-		return m, nil
-	case "down", "j":
-		if m.keyProfileCursor < len(m.keyProfiles)-1 {
-			m.keyProfileCursor++
-		}
-		return m, nil
-	case "enter":
-		// Save the selected keybinding profile.
-		profileName := m.keyProfiles[m.keyProfileCursor]
-		cfg := keyconfig.Config{Profile: profileName}
-		keysPath := filepath.Join(config.ConfigDir(), "keys.yaml")
-		_ = keyconfig.Save(keysPath, cfg)
-
-		// Proceed to scan.
-		svc := m.service
-		return m, func() tea.Msg {
-			results := svc.ScanForConfigs()
-			return scanCompleteMsg{results: results}
-		}
-	case "esc":
-		m.step = wizardWelcome
-		return m, nil
-	}
-	return m, nil
-}
-
-func (m WizardModel) updateScanResult(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.allCandidates = nil
-		m.scanSelected = nil
-		m.step = wizardCatalog
-		return m, nil
-	case "up", "k":
-		m.scanCursor = moveCursor(m.scanCursor, -1, len(m.allCandidates))
-		return m, nil
-	case "down", "j":
-		m.scanCursor = moveCursor(m.scanCursor, 1, len(m.allCandidates))
-		return m, nil
-	case " ":
-		if m.scanCursor < len(m.scanSelected) {
-			m.scanSelected[m.scanCursor] = !m.scanSelected[m.scanCursor]
-		}
-		return m, nil
-	case "enter":
-		m.step = wizardCatalog
-		return m, nil
-	}
-	return m, nil
-}
-
-func (m WizardModel) updateCatalog(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.step = wizardProjectForm
-		m.nameInput.Focus()
-		return m, nil
-	case "tab":
-		m.catSection = (m.catSection + 1) % catSectionCount
-		return m, nil
-	case "shift+tab":
-		m.catSection = (m.catSection - 1 + catSectionCount) % catSectionCount
-		return m, nil
-	case "up", "k":
-		n := m.catSectionLen()
-		m.catCursors[m.catSection] = moveCursor(m.catCursors[m.catSection], -1, n)
-		return m, nil
-	case "down", "j":
-		n := m.catSectionLen()
-		m.catCursors[m.catSection] = moveCursor(m.catCursors[m.catSection], 1, n)
-		return m, nil
-	case " ":
-		m.toggleCatalogItem()
-		return m, nil
-	case "enter":
-		m.step = wizardProjectForm
-		m.nameInput.Focus()
-		return m, nil
-	}
-	return m, nil
-}
-
-func (m WizardModel) updateProjectForm(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.step = wizardCatalog
-		return m, nil
-	case "tab", "shift+tab":
-		if m.focused == 0 {
-			m.focused = 1
-			m.nameInput.Blur()
-			m.pathInput.Focus()
-		} else {
-			m.focused = 0
-			m.pathInput.Blur()
-			m.nameInput.Focus()
-		}
-		return m, nil
-	case "enter":
-		name := strings.TrimSpace(m.nameInput.Value())
-		if name == "" {
-			m.err = "Profile name is required"
-			return m, nil
-		}
-		path := strings.TrimSpace(m.pathInput.Value())
-		if path == "" {
-			m.err = "Project path is required"
-			return m, nil
-		}
-		m.err = ""
-		m.projectName = name
-		m.step = wizardSummary
-		return m, nil
-	}
-	return m.updateTextInputs(msg)
-}
-
-func (m WizardModel) updateTextInputs(msg tea.Msg) (tea.Model, tea.Cmd) {
-	if m.focused == 0 {
-		var cmd tea.Cmd
-		m.nameInput, cmd = m.nameInput.Update(msg)
-		m.nameModified = true
-		return m, cmd
-	}
-	var cmd tea.Cmd
-	oldPath := m.pathInput.Value()
-	m.pathInput, cmd = m.pathInput.Update(msg)
-	// Auto-update name from path basename when user hasn't manually edited it.
-	if !m.nameModified && m.pathInput.Value() != oldPath {
-		base := filepath.Base(strings.TrimSpace(m.pathInput.Value()))
-		if base != "" && base != "." && base != "/" {
-			m.nameInput.SetValue(base)
-		}
-	}
-	return m, cmd
-}
-
-func (m WizardModel) updateSummary(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	switch msg.String() {
-	case "esc":
-		m.step = wizardProjectForm
-		m.nameInput.Focus()
-		return m, nil
-	case "enter":
-		return m.applySetup()
-	}
-	return m, nil
-}
-
-// --- Catalog helpers ---
-
-func (m WizardModel) catSectionLen() int {
-	switch m.catSection {
-	case catMCPs:
-		return len(m.cat.MCPs)
-	case catSkills:
-		return len(m.cat.Skills)
-	case catHooks:
-		return len(m.cat.Hooks)
-	case catPermissions:
-		return len(m.cat.Permissions)
+func (w wizardModel) currentListLen() int {
+	switch w.step {
+	case wizardStepMCPs:
+		return len(w.allMCPs)
+	case wizardStepOptions:
+		all, _ := w.currentOptionList()
+		return len(all)
+	case wizardStepReview:
+		return 0
 	}
 	return 0
 }
 
-func (m *WizardModel) toggleCatalogItem() {
-	cur := m.catCursors[m.catSection]
-	switch m.catSection {
-	case catMCPs:
-		if cur < len(m.catSelectedMCP) {
-			m.catSelectedMCP[cur] = !m.catSelectedMCP[cur]
+func (w wizardModel) currentOptionList() ([]string, map[string]bool) {
+	// Flatten all option sections into one list for now
+	all := make([]string, 0, len(w.allSkills)+len(w.allPerms)+len(w.allHooks))
+	all = append(all, w.allSkills...)
+	all = append(all, w.allPerms...)
+	all = append(all, w.allHooks...)
+
+	merged := make(map[string]bool)
+	for k, v := range w.selectedSkill {
+		merged[k] = v
+	}
+	for k, v := range w.selectedPerm {
+		merged[k] = v
+	}
+	for k, v := range w.selectedHook {
+		merged[k] = v
+	}
+	return all, merged
+}
+
+func (w wizardModel) saveAndFinish() tea.Cmd {
+	svc := w.svc
+	profileName := w.profileName
+	selMCP := copyBoolMap(w.selectedMCP)
+	selSkill := copyBoolMap(w.selectedSkill)
+	selPerm := copyBoolMap(w.selectedPerm)
+	selHook := copyBoolMap(w.selectedHook)
+
+	return func() tea.Msg {
+		prof, err := svc.LoadProfile(profileName)
+		if err != nil {
+			prof = model.ProjectProfile{Name: profileName}
 		}
-	case catSkills:
-		if cur < len(m.catSelectedSk) {
-			m.catSelectedSk[cur] = !m.catSelectedSk[cur]
+
+		prof.MCPs = nil
+		for name, sel := range selMCP {
+			if sel {
+				prof.MCPs = append(prof.MCPs, model.MCPAssignment{Name: name})
+			}
 		}
-	case catHooks:
-		if cur < len(m.catSelectedHk) {
-			m.catSelectedHk[cur] = !m.catSelectedHk[cur]
+		prof.Skills = nil
+		for name, sel := range selSkill {
+			if sel {
+				prof.Skills = append(prof.Skills, name)
+			}
 		}
-	case catPermissions:
-		if cur < len(m.catSelectedPm) {
-			m.catSelectedPm[cur] = !m.catSelectedPm[cur]
+		prof.Permissions = nil
+		for name, sel := range selPerm {
+			if sel {
+				prof.Permissions = append(prof.Permissions, name)
+			}
 		}
+		prof.Hooks = nil
+		for name, sel := range selHook {
+			if sel {
+				prof.Hooks = append(prof.Hooks, name)
+			}
+		}
+
+		// Sort for deterministic YAML output (CS-10)
+		sort.Slice(prof.MCPs, func(i, j int) bool { return prof.MCPs[i].Name < prof.MCPs[j].Name })
+		sort.Strings(prof.Skills)
+		sort.Strings(prof.Permissions)
+		sort.Strings(prof.Hooks)
+
+		if err := svc.SaveProfile(prof); err != nil {
+			return toolsLaunchDoneMsg{err: err}
+		}
+		return toolsWizardDoneMsg{}
 	}
 }
 
-func (m WizardModel) selectedCandidates() []service.ImportCandidate {
-	var kept []service.ImportCandidate
-	for i, c := range m.allCandidates {
-		if i < len(m.scanSelected) && m.scanSelected[i] {
-			kept = append(kept, c)
-		}
-	}
-	return kept
-}
-
-func (m WizardModel) catalogSelectionSummary() (mcps []string, skills []string, hooks []string, perms []string) {
-	for i, sel := range m.catSelectedMCP {
-		if sel {
-			mcps = append(mcps, m.cat.MCPs[i].Name)
-		}
-	}
-	for i, sel := range m.catSelectedSk {
-		if sel {
-			skills = append(skills, m.cat.Skills[i].Name)
-		}
-	}
-	for i, sel := range m.catSelectedHk {
-		if sel {
-			hooks = append(hooks, m.cat.Hooks[i].Name)
-		}
-	}
-	for i, sel := range m.catSelectedPm {
-		if sel {
-			perms = append(perms, m.cat.Permissions[i].Name)
-		}
-	}
-	return
-}
-
-// --- Apply ---
-
-func (m WizardModel) applySetup() (tea.Model, tea.Cmd) {
-	// 1. Import scanned servers.
-	candidates := m.selectedCandidates()
-	if len(candidates) > 0 {
-		if err := m.service.ApplyImport(candidates); err != nil {
-			m.err = fmt.Sprintf("import failed: %v", err)
-			return m, nil
-		}
-		m.importedCount = len(candidates)
-	}
-
-	// 2. Install catalog selections.
-	catMCPs, catSkills, catHooks, catPerms := m.catalogSelectionSummary()
-
-	for i, sel := range m.catSelectedMCP {
-		if sel {
-			entry := m.cat.MCPs[i]
-			_ = m.service.AddServer(entry.ServerDef)
-		}
-	}
-	for i, sel := range m.catSelectedSk {
-		if sel {
-			entry := m.cat.Skills[i]
-			_ = m.service.InstallCatalogSkill(entry.Name, entry.Description, entry.Content)
-		}
-	}
-	for i, sel := range m.catSelectedHk {
-		if sel {
-			entry := m.cat.Hooks[i]
-			_ = m.service.AddHook(entry.HookDef)
-		}
-	}
-	for i, sel := range m.catSelectedPm {
-		if sel {
-			entry := m.cat.Permissions[i]
-			_ = m.service.AddPermission(entry.PermissionRule)
-		}
-	}
-
-	m.catalogCount = len(catMCPs) + len(catSkills) + len(catHooks) + len(catPerms)
-
-	// 3. Create the project.
-	projPath := strings.TrimSpace(m.pathInput.Value())
-	if absPath, err := filepath.Abs(projPath); err == nil {
-		projPath = absPath
-	}
-	proj := model.Project{
-		Name:    m.projectName,
-		Path:    projPath,
-		Clients: []model.ClientType{model.ClientClaudeCode},
-	}
-	if err := m.service.AddProject(proj); err != nil {
-		m.err = fmt.Sprintf("creating profile: %v", err)
-		return m, nil
-	}
-
-	// 4. Assign all servers (imported + catalog) to the project.
-	for _, c := range candidates {
-		name := c.Name
-		if c.Resolution == service.ImportRename {
-			name = c.RenameTo
-		}
-		_ = m.service.AssignServer(m.projectName, name)
-	}
-	for _, name := range catMCPs {
-		_ = m.service.AssignServer(m.projectName, name)
-	}
-	for _, name := range catSkills {
-		_ = m.service.AssignSkill(m.projectName, name)
-	}
-	for _, name := range catHooks {
-		_ = m.service.AssignHook(m.projectName, name)
-	}
-	for _, name := range catPerms {
-		_ = m.service.AssignPermission(m.projectName, name)
-	}
-
-	m.completed = true
-	m.step = wizardDone
-	return m, nil
-}
-
-// --- Views ---
-
-func (m WizardModel) View() string {
-	if m.width == 0 {
-		return "Loading..."
-	}
-
+func (w wizardModel) view(width, height int) string {
 	var b strings.Builder
 
-	switch m.step {
-	case wizardWelcome:
-		m.renderWelcome(&b)
-	case wizardKeybindingProfile:
-		m.renderKeybindingProfile(&b)
-	case wizardScanResult:
-		m.renderScanResult(&b)
-	case wizardCatalog:
-		m.renderCatalog(&b)
-	case wizardProjectForm:
-		m.renderProjectForm(&b)
-	case wizardSummary:
-		m.renderSummary(&b)
-	case wizardDone:
-		m.renderDone(&b)
+	// Step indicator
+	steps := [wizardStepCount]string{"MCPs", "Options", "Review"}
+	b.WriteString("  Launch Wizard — Step " + fmt.Sprintf("%d", w.step+1) + " of 3: " + steps[w.step] + "\n\n")
+
+	switch w.step {
+	case wizardStepMCPs:
+		b.WriteString("  Select MCP servers:\n\n")
+		for i, name := range w.allMCPs {
+			marker := "  "
+			if w.selectedMCP[name] {
+				marker = styleSynced.Render("x ")
+			}
+			line := "  " + marker + name
+			if i == w.cursor {
+				b.WriteString(styleListSelected.Render(line))
+			} else {
+				b.WriteString(line)
+			}
+			b.WriteString("\n")
+		}
+		if len(w.allMCPs) == 0 {
+			b.WriteString("  (no servers in registry)\n")
+		}
+
+	case wizardStepOptions:
+		sections := []struct {
+			title string
+			items []string
+			sel   map[string]bool
+		}{
+			{"Skills", w.allSkills, w.selectedSkill},
+			{"Permissions", w.allPerms, w.selectedPerm},
+			{"Hooks", w.allHooks, w.selectedHook},
+		}
+		idx := 0
+		for _, sec := range sections {
+			count := 0
+			for _, n := range sec.items {
+				if sec.sel[n] {
+					count++
+				}
+			}
+			b.WriteString(styleListHeader.Render(fmt.Sprintf("  %s (%d selected)", sec.title, count)) + "\n")
+			for _, name := range sec.items {
+				marker := "  "
+				if sec.sel[name] {
+					marker = styleSynced.Render("x ")
+				}
+				line := "    " + marker + name
+				if idx == w.cursor {
+					b.WriteString(styleListSelected.Render(line))
+				} else {
+					b.WriteString(line)
+				}
+				b.WriteString("\n")
+				idx++
+			}
+			if len(sec.items) == 0 {
+				b.WriteString("    (none)\n")
+			}
+			b.WriteString("\n")
+		}
+
+	case wizardStepReview:
+		b.WriteString("  Profile: " + w.profileName + "\n")
+		b.WriteString("  Project: " + w.projectName + "\n\n")
+
+		mcpCount := countTrue(w.selectedMCP)
+		skillCount := countTrue(w.selectedSkill)
+		permCount := countTrue(w.selectedPerm)
+		hookCount := countTrue(w.selectedHook)
+
+		fmt.Fprintf(&b, "  MCPs          %d\n", mcpCount)
+		fmt.Fprintf(&b, "  Skills        %d\n", skillCount)
+		fmt.Fprintf(&b, "  Permissions   %d\n", permCount)
+		fmt.Fprintf(&b, "  Hooks         %d\n", hookCount)
+		b.WriteString("\n  Ready to save profile and launch.\n")
 	}
 
-	formWidth := clamp(m.width-4, 40, 76)
-	content := formBoxStyle.Width(formWidth).Render(b.String())
-	return lipgloss.Place(m.width, m.height, lipgloss.Center, lipgloss.Center, content)
-}
-
-func (m WizardModel) renderWelcome(b *strings.Builder) {
-	b.WriteString(formTitleStyle.Render("Welcome to hystak"))
-	b.WriteString("\n\n")
-	b.WriteString("hystak is your local shelf for Claude Code\n")
-	b.WriteString("artifacts: MCPs, skills, hooks, permissions.\n")
-	b.WriteString("\n")
-	b.WriteString(formHintStyle.Render("Configure once, grab from the shelf when you need it."))
-	b.WriteString("\n\n")
-	b.WriteString("This wizard will help you:\n")
-	b.WriteString("  1. Import existing MCP configs\n")
-	b.WriteString("  2. Browse the built-in catalog\n")
-	b.WriteString("  3. Create your first profile\n")
-	b.WriteString("\n")
-	b.WriteString(formHintStyle.Render("enter: begin | esc: skip setup"))
-}
-
-func (m WizardModel) renderKeybindingProfile(b *strings.Builder) {
-	b.WriteString(formTitleStyle.Render("Choose Navigation Style"))
-	b.WriteString("\n\n")
-	b.WriteString("How would you like to navigate the TUI?\n\n")
-
-	descs := map[string]string{
-		keyconfig.ProfileArrows:  "Left/Right switch tabs, Up/Down navigate lists",
-		keyconfig.ProfileVim:     "h/l switch tabs, j/k navigate lists",
-		keyconfig.ProfileClassic: "Tab/Shift+Tab switch tabs, Up/Down/j/k navigate lists",
+	b.WriteString("\n  ")
+	if w.step > 0 {
+		b.WriteString(styleHelpKey.Render("Left") + styleHelpDesc.Render(":Back  "))
 	}
-
-	for i, name := range m.keyProfiles {
-		cursor := "  "
-		if i == m.keyProfileCursor {
-			cursor = "\u25b8 "
-		}
-		label := name
-		if name == keyconfig.ProfileArrows {
-			label += " (recommended)"
-		}
-		if i == m.keyProfileCursor {
-			b.WriteString(cursor + sectionActiveStyle.Render(label))
-		} else {
-			b.WriteString(cursor + label)
-		}
-		b.WriteString("\n")
-		b.WriteString("    " + formHintStyle.Render(descs[name]))
-		b.WriteString("\n")
-	}
-
-	b.WriteString("\n")
-	b.WriteString(formHintStyle.Render("enter: select | esc: back"))
-}
-
-func (m WizardModel) renderScanResult(b *strings.Builder) {
-	b.WriteString(formTitleStyle.Render("Import Existing Configs"))
-	b.WriteString("\n\n")
-
-	idx := 0
-	for _, r := range m.scanResults {
-		count := len(r.Candidates)
-		b.WriteString(formLabelStyle.Render(fmt.Sprintf("%s (%d servers)", r.Path, count)))
-		b.WriteString("\n")
-
-		for _, c := range r.Candidates {
-			cur := "  "
-			if idx == m.scanCursor {
-				cur = "\u25b8 "
-			}
-			check := "[x]"
-			if !m.scanSelected[idx] {
-				check = "[ ]"
-			}
-			fmt.Fprintf(b, "%s%s %s\n", cur, check, c.Name)
-			detail := formatServerCompact(c.Server)
-			fmt.Fprintf(b, "       %s\n", formHintStyle.Render(detail))
-			idx++
-		}
-		b.WriteString("\n")
-	}
-
-	if m.err != "" {
-		b.WriteString(errorStyle.Render(m.err))
-		b.WriteString("\n\n")
-	}
-	b.WriteString(formHintStyle.Render("space: toggle | enter: continue | esc: skip"))
-}
-
-func (m WizardModel) renderCatalog(b *strings.Builder) {
-	b.WriteString(formTitleStyle.Render("Browse Catalog"))
-	b.WriteString("\n")
-
-	// Section tabs.
-	var tabs []string
-	for i, label := range catSectionLabels {
-		if catalogSection(i) == m.catSection {
-			tabs = append(tabs, detailTitleStyle.Render("["+label+"]"))
-		} else {
-			tabs = append(tabs, formHintStyle.Render(" "+label+" "))
-		}
-	}
-	b.WriteString(strings.Join(tabs, " "))
-	b.WriteString("\n\n")
-
-	cursor := m.catCursors[m.catSection]
-
-	switch m.catSection {
-	case catMCPs:
-		for i, entry := range m.cat.MCPs {
-			cur := "  "
-			if i == cursor {
-				cur = "\u25b8 "
-			}
-			check := "[ ]"
-			if m.catSelectedMCP[i] {
-				check = "[x]"
-			}
-			label := entry.Name
-			if entry.Popular {
-				label += " *"
-			}
-			fmt.Fprintf(b, "%s%s %-28s %s\n", cur, check, label,
-				formHintStyle.Render(entry.Description))
-		}
-
-	case catSkills:
-		for i, entry := range m.cat.Skills {
-			cur := "  "
-			if i == cursor {
-				cur = "\u25b8 "
-			}
-			check := "[ ]"
-			if m.catSelectedSk[i] {
-				check = "[x]"
-			}
-			fmt.Fprintf(b, "%s%s %-28s %s\n", cur, check, entry.Name,
-				formHintStyle.Render(entry.Description))
-		}
-
-	case catHooks:
-		for i, entry := range m.cat.Hooks {
-			cur := "  "
-			if i == cursor {
-				cur = "\u25b8 "
-			}
-			check := "[ ]"
-			if m.catSelectedHk[i] {
-				check = "[x]"
-			}
-			desc := fmt.Sprintf("%s: %s", entry.Event, entry.Command)
-			fmt.Fprintf(b, "%s%s %-28s %s\n", cur, check, entry.Name,
-				formHintStyle.Render(desc))
-		}
-
-	case catPermissions:
-		for i, entry := range m.cat.Permissions {
-			cur := "  "
-			if i == cursor {
-				cur = "\u25b8 "
-			}
-			check := "[ ]"
-			if m.catSelectedPm[i] {
-				check = "[x]"
-			}
-			desc := fmt.Sprintf("%s: %s", entry.EffectiveType(), entry.Rule)
-			fmt.Fprintf(b, "%s%s %-28s %s\n", cur, check, entry.Name,
-				formHintStyle.Render(desc))
-		}
-	}
-
-	b.WriteString("\n")
-	if m.err != "" {
-		b.WriteString(errorStyle.Render(m.err))
-		b.WriteString("\n\n")
-	}
-	b.WriteString(formHintStyle.Render("space: toggle | tab: section | enter: continue | esc: skip"))
-}
-
-func (m WizardModel) renderProjectForm(b *strings.Builder) {
-	b.WriteString(formTitleStyle.Render("Create Profile"))
-	b.WriteString("\n\n")
-
-	nameLabel := formLabelStyle.Render("Profile name")
-	pathLabel := formLabelStyle.Render("Project path")
-
-	if m.focused == 0 {
-		nameLabel = detailTitleStyle.Render("Profile name")
+	if w.step < wizardStepReview {
+		b.WriteString(styleHelpKey.Render("Space") + styleHelpDesc.Render(":Toggle  "))
+		b.WriteString(styleHelpKey.Render("Enter") + styleHelpDesc.Render(":Next  "))
 	} else {
-		pathLabel = detailTitleStyle.Render("Project path")
+		b.WriteString(styleHelpKey.Render("Enter") + styleHelpDesc.Render(":Launch  "))
 	}
+	b.WriteString(styleHelpKey.Render("Esc") + styleHelpDesc.Render(":Cancel"))
 
-	b.WriteString(nameLabel)
-	b.WriteString("\n")
-	b.WriteString(m.nameInput.View())
-	b.WriteString("\n\n")
-
-	b.WriteString(pathLabel)
-	b.WriteString("\n")
-	b.WriteString(m.pathInput.View())
-	b.WriteString("\n\n")
-
-	if m.err != "" {
-		b.WriteString(errorStyle.Render(m.err))
-		b.WriteString("\n\n")
-	}
-
-	b.WriteString(formHintStyle.Render("tab: switch field | enter: continue | esc: back"))
+	content := b.String()
+	box := styleOverlayBorder.Width(min(width-4, 60)).Render(content)
+	return centerOverlay(box, width, height)
 }
 
-func (m WizardModel) renderSummary(b *strings.Builder) {
-	b.WriteString(formTitleStyle.Render("Setup Summary"))
-	b.WriteString("\n\n")
-
-	// Imported servers.
-	candidates := m.selectedCandidates()
-	if len(candidates) > 0 {
-		names := make([]string, len(candidates))
-		for i, c := range candidates {
-			names[i] = c.Name
+func countTrue(m map[string]bool) int {
+	n := 0
+	for _, v := range m {
+		if v {
+			n++
 		}
-		fmt.Fprintf(b, "%s %d imported MCPs\n", formLabelStyle.Render("Import:"), len(candidates))
-		b.WriteString(formHintStyle.Render("  " + strings.Join(names, ", ")))
-		b.WriteString("\n\n")
 	}
-
-	// Catalog selections.
-	catMCPs, catSkills, catHooks, catPerms := m.catalogSelectionSummary()
-	if len(catMCPs) > 0 {
-		fmt.Fprintf(b, "%s %s\n", formLabelStyle.Render("Catalog MCPs:"), strings.Join(catMCPs, ", "))
-	}
-	if len(catSkills) > 0 {
-		fmt.Fprintf(b, "%s %s\n", formLabelStyle.Render("Catalog Skills:"), strings.Join(catSkills, ", "))
-	}
-	if len(catHooks) > 0 {
-		fmt.Fprintf(b, "%s %s\n", formLabelStyle.Render("Catalog Hooks:"), strings.Join(catHooks, ", "))
-	}
-	if len(catPerms) > 0 {
-		fmt.Fprintf(b, "%s %s\n", formLabelStyle.Render("Catalog Perms:"), strings.Join(catPerms, ", "))
-	}
-	totalCatalog := len(catMCPs) + len(catSkills) + len(catHooks) + len(catPerms)
-	if totalCatalog > 0 || len(candidates) > 0 {
-		b.WriteString("\n")
-	}
-
-	fmt.Fprintf(b, "%s %s\n", formLabelStyle.Render("Profile:"), detailTitleStyle.Render(m.projectName))
-	fmt.Fprintf(b, "  %s %s\n", formLabelStyle.Render("Path:"), m.pathInput.Value())
-	fmt.Fprintf(b, "  %s claude-code\n", formLabelStyle.Render("Client:"))
-
-	totalMCPs := len(candidates) + len(catMCPs)
-	if totalMCPs > 0 {
-		fmt.Fprintf(b, "  %s %d servers\n", formLabelStyle.Render("MCPs:"), totalMCPs)
-	}
-	if len(catSkills) > 0 {
-		fmt.Fprintf(b, "  %s %d\n", formLabelStyle.Render("Skills:"), len(catSkills))
-	}
-	if len(catHooks) > 0 {
-		fmt.Fprintf(b, "  %s %d\n", formLabelStyle.Render("Hooks:"), len(catHooks))
-	}
-	if len(catPerms) > 0 {
-		fmt.Fprintf(b, "  %s %d\n", formLabelStyle.Render("Permissions:"), len(catPerms))
-	}
-
-	b.WriteString("\n")
-	if m.err != "" {
-		b.WriteString(errorStyle.Render(m.err))
-		b.WriteString("\n\n")
-	}
-	b.WriteString(formHintStyle.Render("enter: confirm | esc: back"))
+	return n
 }
 
-func (m WizardModel) renderDone(b *strings.Builder) {
-	b.WriteString(formTitleStyle.Render("Setup Complete"))
-	b.WriteString("\n\n")
-	if m.importedCount > 0 {
-		fmt.Fprintf(b, "Imported %d MCPs from existing configs.\n", m.importedCount)
+func copyBoolMap(m map[string]bool) map[string]bool {
+	cp := make(map[string]bool, len(m))
+	for k, v := range m {
+		cp[k] = v
 	}
-	if m.catalogCount > 0 {
-		fmt.Fprintf(b, "Installed %d items from catalog.\n", m.catalogCount)
-	}
-	fmt.Fprintf(b, "Created profile %s.\n", detailTitleStyle.Render(m.projectName))
-	b.WriteString("\n")
-	b.WriteString(syncMsgStyle.Render("Your shelf is stocked. Run hystak to pick a profile and launch."))
-	b.WriteString("\n\n")
-	b.WriteString(formHintStyle.Render("Press any key to continue..."))
+	return cp
 }

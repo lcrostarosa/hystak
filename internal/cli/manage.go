@@ -1,29 +1,45 @@
 package cli
 
 import (
+	"fmt"
+	"os"
+
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/lcrostarosa/hystak/internal/tui"
+	"github.com/hystak/hystak/internal/keyconfig"
+	"github.com/hystak/hystak/internal/tui"
 	"github.com/spf13/cobra"
 )
 
-func (a *cliApp) newManageCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "manage",
-		Short: "Open the full management TUI",
-		Long:  "Launch the interactive TUI for managing MCPs, profiles, skills, hooks, and permissions.",
-		RunE: func(cmd *cobra.Command, args []string) error {
-			m := tui.NewApp(a.svc, a.keyCfg)
-			p := tea.NewProgram(m, tea.WithAltScreen())
-			result, err := p.Run()
-			if err != nil {
-				return err
-			}
-			if app, ok := result.(tui.AppModel); ok {
-				if proj := app.LaunchRequest(); proj != nil {
-					return a.syncAndLaunch(cmd, *proj, nil, false, false, true)
-				}
-			}
-			return nil
-		},
+var manageCmd = &cobra.Command{
+	Use:   "manage",
+	Short: "Open the management TUI",
+	Long:  "Launch the full management TUI for all resources.",
+	RunE: func(cmd *cobra.Command, args []string) error {
+		return launchTUI()
+	},
+}
+
+func init() {
+	rootCmd.AddCommand(manageCmd)
+}
+
+// launchTUI builds a service and starts the Bubble Tea TUI.
+func launchTUI() error {
+	svc, err := buildServiceReadOnly()
+	if err != nil {
+		return err
 	}
+
+	keyCfg, err := keyconfig.LoadDefault()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "warning: loading keybindings: %v\n", err)
+		keyCfg = keyconfig.DefaultConfig()
+	}
+
+	keys := tui.NewKeyMap(keyCfg.ResolvedBindings())
+	app := tui.NewApp(svc, keys, version, commit, date)
+
+	p := tea.NewProgram(app, tea.WithAltScreen())
+	_, err = p.Run()
+	return err
 }

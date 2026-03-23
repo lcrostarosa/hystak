@@ -6,130 +6,219 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/lcrostarosa/hystak/internal/model"
+	"github.com/hystak/hystak/internal/model"
 )
 
-func TestSettingsDeployer_SyncSettings(t *testing.T) {
-	projectDir := t.TempDir()
+func TestSettingsDeployer_Sync(t *testing.T) {
+	tmp := t.TempDir()
+	d := &SettingsDeployer{}
+	projDir := filepath.Join(tmp, "project")
 
-	deployer := &SettingsDeployer{}
-
-	hooks := []model.HookDef{
-		{Name: "lint", Event: "PreToolUse", Matcher: "Bash", Command: "golangci-lint run ./...", Timeout: 30000},
-	}
-	permissions := []model.PermissionRule{
-		{Name: "allow-bash", Rule: "Bash(*)", Type: "allow"},
-		{Name: "deny-env", Rule: "Read(.env)", Type: "deny"},
-	}
-
-	if err := deployer.SyncSettings(projectDir, hooks, permissions); err != nil {
-		t.Fatalf("SyncSettings: %v", err)
+	cfg := DeployConfig{
+		Hooks: []model.HookDef{
+			{Name: "lint", Event: model.HookEventPostToolUse, Matcher: "Edit", Command: "eslint", Timeout: 30},
+		},
+		Permissions: []model.PermissionRule{
+			{Name: "allow-bash", Rule: "Bash(*)", Type: model.PermissionAllow},
+			{Name: "deny-rm", Rule: "Bash(rm -rf /)", Type: model.PermissionDeny},
+		},
 	}
 
-	settingsPath := filepath.Join(projectDir, ".claude", "settings.local.json")
-	data, err := os.ReadFile(settingsPath)
-	if err != nil {
-		t.Fatalf("reading settings: %v", err)
-	}
-
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
-		t.Fatalf("parsing settings: %v", err)
-	}
-
-	// Verify hooks.
-	if _, ok := raw["hooks"]; !ok {
-		t.Fatal("expected 'hooks' key in settings")
-	}
-
-	var hooksMap map[string][]hookMatcher
-	if err := json.Unmarshal(raw["hooks"], &hooksMap); err != nil {
-		t.Fatalf("parsing hooks: %v", err)
-	}
-
-	matchers, ok := hooksMap["PreToolUse"]
-	if !ok || len(matchers) == 0 {
-		t.Fatal("expected PreToolUse hooks")
-	}
-	if matchers[0].Matcher != "Bash" {
-		t.Errorf("matcher = %q, want 'Bash'", matchers[0].Matcher)
-	}
-	if len(matchers[0].Hooks) != 1 {
-		t.Fatalf("expected 1 hook entry, got %d", len(matchers[0].Hooks))
-	}
-	if matchers[0].Hooks[0].Command != "golangci-lint run ./..." {
-		t.Errorf("hook command = %q", matchers[0].Hooks[0].Command)
-	}
-	if matchers[0].Hooks[0].Timeout != 30000 {
-		t.Errorf("hook timeout = %d, want 30000", matchers[0].Hooks[0].Timeout)
-	}
-
-	// Verify permissions.
-	var permsMap map[string][]string
-	if err := json.Unmarshal(raw["permissions"], &permsMap); err != nil {
-		t.Fatalf("parsing permissions: %v", err)
-	}
-	if len(permsMap["allow"]) != 1 || permsMap["allow"][0] != "Bash(*)" {
-		t.Errorf("allow permissions = %v", permsMap["allow"])
-	}
-	if len(permsMap["deny"]) != 1 || permsMap["deny"][0] != "Read(.env)" {
-		t.Errorf("deny permissions = %v", permsMap["deny"])
-	}
-}
-
-func TestSettingsDeployer_PreservesExistingKeys(t *testing.T) {
-	projectDir := t.TempDir()
-
-	settingsDir := filepath.Join(projectDir, ".claude")
-	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
+	if err := d.Sync(projDir, cfg); err != nil {
 		t.Fatal(err)
 	}
 
-	// Write existing settings with a custom key.
-	existing := `{"customKey": "customValue"}`
-	settingsPath := filepath.Join(settingsDir, "settings.local.json")
-	if err := os.WriteFile(settingsPath, []byte(existing), 0o644); err != nil {
-		t.Fatal(err)
-	}
-
-	deployer := &SettingsDeployer{}
-	hooks := []model.HookDef{
-		{Name: "test", Event: "PostToolUse", Command: "echo done"},
-	}
-
-	if err := deployer.SyncSettings(projectDir, hooks, nil); err != nil {
-		t.Fatal(err)
-	}
-
-	data, err := os.ReadFile(settingsPath)
+	// Read and verify
+	path := filepath.Join(projDir, ".claude", "settings.local.json")
+	data, err := os.ReadFile(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
+	var settings settingsJSON
+	if err := json.Unmarshal(data, &settings); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, ok := raw["customKey"]; !ok {
-		t.Error("customKey was not preserved")
+	if len(settings.Hooks["PostToolUse"]) != 1 {
+		t.Fatalf("PostToolUse hooks = %d, want 1", len(settings.Hooks["PostToolUse"]))
 	}
-	if _, ok := raw["hooks"]; !ok {
-		t.Error("hooks were not written")
+
+	// Verify actual hook field values (Item 4: round-trip content check)
+	hook := settings.Hooks["PostToolUse"][0]
+	if hook.Matcher != "Edit" {
+		t.Errorf("hook matcher = %q, want Edit", hook.Matcher)
+	}
+	if hook.Command != "eslint" {
+		t.Errorf("hook command = %q, want eslint", hook.Command)
+	}
+	if hook.Timeout != 30 {
+		t.Errorf("hook timeout = %d, want 30", hook.Timeout)
+	}
+
+	if settings.Permissions == nil {
+		t.Fatal("permissions is nil")
+	}
+	if len(settings.Permissions.Allow) != 1 {
+		t.Fatalf("allow = %d, want 1", len(settings.Permissions.Allow))
+	}
+	if len(settings.Permissions.Deny) != 1 {
+		t.Fatalf("deny = %d, want 1", len(settings.Permissions.Deny))
+	}
+
+	// Verify actual permission rule strings
+	if settings.Permissions.Allow[0] != "Bash(*)" {
+		t.Errorf("allow[0] = %q, want Bash(*)", settings.Permissions.Allow[0])
+	}
+	if settings.Permissions.Deny[0] != "Bash(rm -rf /)" {
+		t.Errorf("deny[0] = %q, want Bash(rm -rf /)", settings.Permissions.Deny[0])
 	}
 }
 
-func TestSettingsDeployer_NoOp(t *testing.T) {
-	projectDir := t.TempDir()
+func TestSettingsDeployer_Sync_Cleanup(t *testing.T) {
+	tmp := t.TempDir()
+	d := &SettingsDeployer{}
+	projDir := filepath.Join(tmp, "project")
 
-	deployer := &SettingsDeployer{}
-	if err := deployer.SyncSettings(projectDir, nil, nil); err != nil {
+	// First deploy with content
+	cfg := DeployConfig{
+		Hooks: []model.HookDef{{Name: "lint", Event: model.HookEventPostToolUse, Command: "eslint", Timeout: 30}},
+	}
+	if err := d.Sync(projDir, cfg); err != nil {
 		t.Fatal(err)
 	}
 
-	// No file should be created.
-	settingsPath := filepath.Join(projectDir, ".claude", "settings.local.json")
-	if _, err := os.Stat(settingsPath); !os.IsNotExist(err) {
-		t.Error("settings file should not be created when no hooks/permissions")
+	path := filepath.Join(projDir, ".claude", "settings.local.json")
+	if _, err := os.Stat(path); err != nil {
+		t.Fatal("file should exist after first sync")
+	}
+
+	// Re-deploy with empty config -- file should be removed (CS-11)
+	if err := d.Sync(projDir, DeployConfig{}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Error("file should be removed when no hooks/permissions")
+	}
+}
+
+func TestSettingsDeployer_ReadDeployed(t *testing.T) {
+	tmp := t.TempDir()
+	d := &SettingsDeployer{}
+	projDir := filepath.Join(tmp, "project")
+
+	cfg := DeployConfig{
+		Hooks: []model.HookDef{
+			{Event: model.HookEventPreToolUse, Matcher: "Bash", Command: "echo blocked", Timeout: 5},
+		},
+		Permissions: []model.PermissionRule{
+			{Rule: "Bash(*)", Type: model.PermissionAllow},
+		},
+	}
+	if err := d.Sync(projDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+
+	deployed, err := d.ReadDeployed(projDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(deployed.Hooks) != 1 {
+		t.Fatalf("deployed hooks = %d, want 1", len(deployed.Hooks))
+	}
+	if len(deployed.Permissions) != 1 {
+		t.Fatalf("deployed permissions = %d, want 1", len(deployed.Permissions))
+	}
+
+	// Verify hook content (Item 4: round-trip content check)
+	h := deployed.Hooks[0]
+	if h.Event != model.HookEventPreToolUse {
+		t.Errorf("hook event = %q, want PreToolUse", h.Event)
+	}
+	if h.Matcher != "Bash" {
+		t.Errorf("hook matcher = %q, want Bash", h.Matcher)
+	}
+	if h.Command != "echo blocked" {
+		t.Errorf("hook command = %q, want 'echo blocked'", h.Command)
+	}
+	if h.Timeout != 5 {
+		t.Errorf("hook timeout = %d, want 5", h.Timeout)
+	}
+
+	// Verify permission content
+	p := deployed.Permissions[0]
+	if p.Rule != "Bash(*)" {
+		t.Errorf("permission rule = %q, want Bash(*)", p.Rule)
+	}
+	if p.Type != model.PermissionAllow {
+		t.Errorf("permission type = %q, want allow", p.Type)
+	}
+}
+
+func TestSettingsDeployer_Preflight(t *testing.T) {
+	tests := []struct {
+		name         string
+		setup        func(t *testing.T, projDir string)
+		wantConflict bool
+	}{
+		{
+			name: "existing regular file",
+			setup: func(t *testing.T, projDir string) {
+				t.Helper()
+				dir := filepath.Join(projDir, ".claude")
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.WriteFile(filepath.Join(dir, "settings.local.json"), []byte(`{}`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantConflict: true,
+		},
+		{
+			name: "existing symlink",
+			setup: func(t *testing.T, projDir string) {
+				t.Helper()
+				dir := filepath.Join(projDir, ".claude")
+				if err := os.MkdirAll(dir, 0o755); err != nil {
+					t.Fatal(err)
+				}
+				target := filepath.Join(t.TempDir(), "settings.json")
+				if err := os.WriteFile(target, []byte(`{}`), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, filepath.Join(dir, "settings.local.json")); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantConflict: false,
+		},
+		{
+			name:         "no file",
+			setup:        func(t *testing.T, projDir string) { t.Helper() },
+			wantConflict: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			projDir := filepath.Join(tmp, "project")
+			if err := os.MkdirAll(projDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			tt.setup(t, projDir)
+
+			d := &SettingsDeployer{}
+			cfg := DeployConfig{
+				Hooks: []model.HookDef{{Name: "lint", Event: model.HookEventPostToolUse, Command: "eslint"}},
+			}
+			conflicts := d.Preflight(projDir, cfg)
+			gotConflict := len(conflicts) > 0
+			if gotConflict != tt.wantConflict {
+				t.Errorf("conflict = %v, want %v", gotConflict, tt.wantConflict)
+			}
+		})
 	}
 }

@@ -2,168 +2,165 @@ package deploy
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 
-	"github.com/lcrostarosa/hystak/internal/model"
+	"github.com/hystak/hystak/internal/config"
+	"github.com/hystak/hystak/internal/model"
 )
 
-// SettingsDeployer writes hooks and permissions to .claude/settings.local.json.
+// Compile-time interface check.
+var _ ResourceDeployer = (*SettingsDeployer)(nil)
+
+// SettingsDeployer deploys hooks and permissions to .claude/settings.local.json (S-044).
 type SettingsDeployer struct{}
 
-// hookEntry represents a single hook in the Claude Code hooks format.
-type hookEntry struct {
-	Type    string `json:"type"`
+func (d *SettingsDeployer) Kind() ResourceDeployerKind {
+	return ResourceDeployerSettings
+}
+
+// settingsJSON is the JSON structure of settings.local.json.
+type settingsJSON struct {
+	Hooks       map[string][]hookEntryJSON `json:"hooks,omitempty"`
+	Permissions *permissionsJSON           `json:"permissions,omitempty"`
+}
+
+type hookEntryJSON struct {
+	Matcher string `json:"matcher,omitempty"`
 	Command string `json:"command"`
 	Timeout int    `json:"timeout,omitempty"`
 }
 
-// hookMatcher represents a matcher group in the hooks format.
-type hookMatcher struct {
-	Matcher string      `json:"matcher,omitempty"`
-	Hooks   []hookEntry `json:"hooks"`
+type permissionsJSON struct {
+	Allow []string `json:"allow"`
+	Deny  []string `json:"deny"`
 }
 
-// SyncSettings writes hooks and permissions to settings.local.json.
-func (d *SettingsDeployer) SyncSettings(projectPath string, hooks []model.HookDef, permissions []model.PermissionRule) error {
-	if len(hooks) == 0 && len(permissions) == 0 {
-		return nil
-	}
-
-	settingsDir := filepath.Join(projectPath, ".claude")
-	if err := os.MkdirAll(settingsDir, 0o755); err != nil {
+// Sync writes hooks and permissions to settings.local.json.
+// Cleans up when all hooks/permissions are removed (CS-11 cleanup symmetry).
+func (d *SettingsDeployer) Sync(projectPath string, cfg DeployConfig) error {
+	dir := filepath.Join(projectPath, ".claude")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return fmt.Errorf("creating .claude directory: %w", err)
 	}
 
-	settingsPath := filepath.Join(settingsDir, "settings.local.json")
+	path := filepath.Join(dir, "settings.local.json")
 
-	// Read existing settings to preserve non-managed keys.
-	var raw map[string]json.RawMessage
-	data, err := os.ReadFile(settingsPath)
-	if err != nil {
-		if !os.IsNotExist(err) {
-			return fmt.Errorf("reading %s: %w", settingsPath, err)
+	// If no hooks and no permissions, remove the file (cleanup symmetry)
+	if len(cfg.Hooks) == 0 && len(cfg.Permissions) == 0 {
+		err := os.Remove(path)
+		if err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
 		}
-		raw = make(map[string]json.RawMessage)
-	} else {
-		if err := json.Unmarshal(data, &raw); err != nil {
-			return fmt.Errorf("parsing %s: %w", settingsPath, err)
-		}
-	}
-
-	// Build hooks section grouped by event.
-	if len(hooks) > 0 {
-		hooksMap := buildHooksMap(hooks)
-		hooksJSON, err := json.Marshal(hooksMap)
-		if err != nil {
-			return fmt.Errorf("marshaling hooks: %w", err)
-		}
-		raw["hooks"] = hooksJSON
-	}
-
-	// Build permissions section.
-	if len(permissions) > 0 {
-		permsMap := buildPermissionsMap(permissions)
-		permsJSON, err := json.Marshal(permsMap)
-		if err != nil {
-			return fmt.Errorf("marshaling permissions: %w", err)
-		}
-		raw["permissions"] = permsJSON
-	}
-
-	out, err := json.MarshalIndent(raw, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling settings: %w", err)
-	}
-
-	if err := os.WriteFile(settingsPath, append(out, '\n'), 0o644); err != nil {
-		return fmt.Errorf("writing %s: %w", settingsPath, err)
-	}
-
-	return nil
-}
-
-// PreflightSettings checks for hook/permission conflicts before deployment.
-// Returns conflicts when hooks or permissions keys exist in settings.local.json
-// but were not placed by hystak (hystak does not currently track a managed marker
-// for settings, so any pre-existing key is treated as a potential conflict).
-func (d *SettingsDeployer) PreflightSettings(projectPath string, hooks []model.HookDef, permissions []model.PermissionRule) []PreflightConflict {
-	settingsPath := filepath.Join(projectPath, ".claude", "settings.local.json")
-	data, err := os.ReadFile(settingsPath)
-	if err != nil {
-		return nil // no existing file, no conflicts
-	}
-
-	var raw map[string]json.RawMessage
-	if err := json.Unmarshal(data, &raw); err != nil {
 		return nil
 	}
 
-	var conflicts []PreflightConflict
+	settings := settingsJSON{}
 
-	// A conflict exists when the key is already present and hystak intends to write it.
-	if _, exists := raw["hooks"]; exists && len(hooks) > 0 {
-		conflicts = append(conflicts, PreflightConflict{
-			ResourceType: "hook",
-			Name:         "hooks",
-			ExistingPath: settingsPath,
-		})
+	// Build hooks grouped by event
+	if len(cfg.Hooks) > 0 {
+		settings.Hooks = make(map[string][]hookEntryJSON)
+		for _, h := range cfg.Hooks {
+			entry := hookEntryJSON{
+				Matcher: h.Matcher,
+				Command: h.Command,
+				Timeout: h.Timeout,
+			}
+			settings.Hooks[string(h.Event)] = append(settings.Hooks[string(h.Event)], entry)
+		}
 	}
 
-	if _, exists := raw["permissions"]; exists && len(permissions) > 0 {
-		conflicts = append(conflicts, PreflightConflict{
-			ResourceType: "permission",
-			Name:         "permissions",
-			ExistingPath: settingsPath,
-		})
+	// Build permissions split into allow/deny
+	if len(cfg.Permissions) > 0 {
+		perms := &permissionsJSON{
+			Allow: []string{},
+			Deny:  []string{},
+		}
+		for _, p := range cfg.Permissions {
+			switch p.Type {
+			case model.PermissionAllow:
+				perms.Allow = append(perms.Allow, p.Rule)
+			case model.PermissionDeny:
+				perms.Deny = append(perms.Deny, p.Rule)
+			}
+		}
+		sort.Strings(perms.Allow)
+		sort.Strings(perms.Deny)
+		settings.Permissions = perms
 	}
 
-	return conflicts
+	data, err := json.MarshalIndent(settings, "", "  ")
+	if err != nil {
+		return err
+	}
+	data = append(data, '\n')
+	return config.AtomicWrite(path, data, 0o644)
 }
 
-// buildHooksMap groups hooks by event and matcher into the Claude Code format.
-func buildHooksMap(hooks []model.HookDef) map[string][]hookMatcher {
-	// Group by event+matcher.
-	type key struct {
-		event   string
-		matcher string
+// Preflight checks for user-owned settings.local.json (not managed by hystak).
+func (d *SettingsDeployer) Preflight(projectPath string, cfg DeployConfig) []PreflightConflict {
+	if len(cfg.Hooks) == 0 && len(cfg.Permissions) == 0 {
+		return nil
 	}
-	groups := make(map[key][]hookEntry)
-	var order []key
-
-	for _, h := range hooks {
-		k := key{event: h.Event, matcher: h.Matcher}
-		if _, exists := groups[k]; !exists {
-			order = append(order, k)
-		}
-		entry := hookEntry{
-			Type:    "command",
-			Command: h.Command,
-			Timeout: h.Timeout,
-		}
-		groups[k] = append(groups[k], entry)
+	path := filepath.Join(projectPath, ".claude", "settings.local.json")
+	info, err := os.Lstat(path)
+	if err != nil {
+		return nil // file doesn't exist, no conflict
 	}
-
-	result := make(map[string][]hookMatcher)
-	for _, k := range order {
-		result[k.event] = append(result[k.event], hookMatcher{
-			Matcher: k.matcher,
-			Hooks:   groups[k],
-		})
+	// Symlinks are not conflicts (S-048)
+	if info.Mode()&os.ModeSymlink != 0 {
+		return nil
 	}
-
-	return result
+	// Regular file exists — check if it has hystak-managed content
+	// For settings, any existing file could conflict
+	return []PreflightConflict{{
+		Path:    path,
+		Kind:    ResourceDeployerSettings,
+		Message: "settings.local.json already exists",
+	}}
 }
 
-// buildPermissionsMap splits permissions into allow/deny lists.
-func buildPermissionsMap(permissions []model.PermissionRule) map[string][]string {
-	result := make(map[string][]string)
-
-	for _, p := range permissions {
-		typ := p.EffectiveType()
-		result[typ] = append(result[typ], p.Rule)
+// ReadDeployed reads currently deployed hooks and permissions.
+func (d *SettingsDeployer) ReadDeployed(projectPath string) (DeployConfig, error) {
+	path := filepath.Join(projectPath, ".claude", "settings.local.json")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return DeployConfig{}, nil
+		}
+		return DeployConfig{}, err
 	}
 
-	return result
+	var settings settingsJSON
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return DeployConfig{}, err
+	}
+
+	var hooks []model.HookDef
+	for event, entries := range settings.Hooks {
+		for _, e := range entries {
+			hooks = append(hooks, model.HookDef{
+				Event:   model.HookEvent(event),
+				Matcher: e.Matcher,
+				Command: e.Command,
+				Timeout: e.Timeout,
+			})
+		}
+	}
+
+	var perms []model.PermissionRule
+	if settings.Permissions != nil {
+		for _, rule := range settings.Permissions.Allow {
+			perms = append(perms, model.PermissionRule{Rule: rule, Type: model.PermissionAllow})
+		}
+		for _, rule := range settings.Permissions.Deny {
+			perms = append(perms, model.PermissionRule{Rule: rule, Type: model.PermissionDeny})
+		}
+	}
+
+	return DeployConfig{Hooks: hooks, Permissions: perms}, nil
 }

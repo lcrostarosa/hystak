@@ -2,121 +2,134 @@ package cli
 
 import (
 	"fmt"
-	"sort"
 	"text/tabwriter"
 
-	"github.com/lcrostarosa/hystak/internal/backup"
+	"github.com/hystak/hystak/internal/backup"
+	"github.com/hystak/hystak/internal/config"
+	"github.com/hystak/hystak/internal/deploy"
+	"github.com/hystak/hystak/internal/model"
+	"github.com/hystak/hystak/internal/project"
 	"github.com/spf13/cobra"
 )
 
-func (a *cliApp) newBackupCmd() *cobra.Command {
-	var (
-		all  bool
-		list bool
-	)
+var (
+	backupAll  bool
+	backupList bool
+)
 
-	cmd := &cobra.Command{
-		Use:   "backup [project]",
-		Short: "Back up client config files",
-		Long:  "Create backups of MCP client config files for a project, or list existing backups.",
-		Args:  cobra.MaximumNArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if list {
-				return a.listBackups(cmd, args)
-			}
-
-			if all {
-				projects := a.svc.ListProjects()
-				if len(projects) == 0 {
-					_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No projects found.")
-					return nil
-				}
-				for _, proj := range projects {
-					entries, err := a.svc.BackupConfigs(proj.Name)
-					if err != nil {
-						return err
-					}
-					out := cmd.OutOrStdout()
-					_, _ = fmt.Fprintf(out, "Project: %s\n", proj.Name)
-					for _, e := range entries {
-						_, _ = fmt.Fprintf(out, "  backed up → %s\n", e.BackupPath)
-					}
-					if len(entries) == 0 {
-						_, _ = fmt.Fprintln(out, "  no configs to back up")
-					}
-				}
-				return nil
-			}
-
-			if len(args) == 0 {
-				return fmt.Errorf("project name required (or use --all)")
-			}
-
-			entries, err := a.svc.BackupConfigs(args[0])
-			if err != nil {
-				return err
-			}
-			out := cmd.OutOrStdout()
-			for _, e := range entries {
-				_, _ = fmt.Fprintf(out, "backed up → %s\n", e.BackupPath)
-			}
-			if len(entries) == 0 {
-				_, _ = fmt.Fprintln(out, "no configs to back up")
-			}
-			return nil
-		},
-	}
-
-	cmd.Flags().BoolVar(&all, "all", false, "back up all projects")
-	cmd.Flags().BoolVar(&list, "list", false, "list available backups")
-
-	return cmd
+var backupCmd = &cobra.Command{
+	Use:   "backup [project]",
+	Short: "Backup project configs",
+	Long:  "Snapshot client config files to ~/.hystak/backups/ with timestamps.",
+	Args:  cobra.MaximumNArgs(1),
+	RunE:  runBackup,
 }
 
-func (a *cliApp) listBackups(cmd *cobra.Command, args []string) error {
-	var err error
+func init() {
+	backupCmd.Flags().BoolVar(&backupAll, "all", false, "backup all projects")
+	backupCmd.Flags().BoolVar(&backupList, "list", false, "list backups for a project (S-067)")
+	rootCmd.AddCommand(backupCmd)
+}
 
-	if len(args) > 0 {
-		entries, e := a.svc.ListBackups(args[0])
-		if e != nil {
-			return e
+func runBackup(cmd *cobra.Command, args []string) error {
+	mgr := backup.NewDefaultManager()
+
+	if backupList {
+		return runBackupList(cmd, mgr, args)
+	}
+
+	if !backupAll && len(args) == 0 {
+		return fmt.Errorf("project name is required (or use --all)")
+	}
+
+	projStore, err := project.LoadDefault()
+	if err != nil {
+		return fmt.Errorf("loading projects: %w", err)
+	}
+
+	dep, ok := deploy.NewDeployer(model.ClientClaudeCode)
+	if !ok {
+		return fmt.Errorf("no deployer for %s", model.ClientClaudeCode)
+	}
+
+	if backupAll {
+		for _, p := range projStore.List() {
+			configPath := dep.ConfigPath(p.Path)
+			path, err := mgr.Backup(p.Name, configPath)
+			if err != nil {
+				if _, wErr := fmt.Fprintf(cmd.ErrOrStderr(), "  %s: error: %v\n", p.Name, err); wErr != nil {
+					return wErr
+				}
+				continue
+			}
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  %s: %s\n", p.Name, path); err != nil {
+				return err
+			}
 		}
-		if len(entries) == 0 {
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "No backups for project %q.\n", args[0])
-			return nil
-		}
-		printBackupTable(cmd, entries)
 		return nil
 	}
 
-	entries, err := a.svc.ListAllBackups()
+	projectName := args[0]
+	proj, ok := projStore.Get(projectName)
+	if !ok {
+		return fmt.Errorf("project %q not found", projectName)
+	}
+
+	configPath := dep.ConfigPath(proj.Path)
+	path, err := mgr.Backup(projectName, configPath)
 	if err != nil {
 		return err
 	}
-	if len(entries) == 0 {
-		_, _ = fmt.Fprintln(cmd.OutOrStdout(), "No backups found.")
-		return nil
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Backed up to %s\n", path); err != nil {
+		return err
 	}
-	printBackupTable(cmd, entries)
+
+	// Prune old backups (S-070)
+	userCfg, err := config.LoadUserConfig()
+	if err != nil {
+		return nil // non-blocking
+	}
+	pruned, err := mgr.Prune(userCfg.MaxBackups)
+	if err != nil {
+		if _, wErr := fmt.Fprintf(cmd.ErrOrStderr(), "warning: pruning backups: %v\n", err); wErr != nil {
+			return wErr
+		}
+	}
+	if pruned > 0 {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Pruned %d old backup(s)\n", pruned); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
-func printBackupTable(cmd *cobra.Command, entries []backup.BackupEntry) {
-	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	_, _ = fmt.Fprintln(w, "TIMESTAMP\tCLIENT\tSCOPE\tPATH")
-
-	// Sort newest first.
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Timestamp.After(entries[j].Timestamp)
-	})
-
-	for _, e := range entries {
-		_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\n",
-			e.Timestamp.Format("2006-01-02 15:04:05"),
-			e.ClientType,
-			e.Scope,
-			e.BackupPath,
-		)
+func runBackupList(cmd *cobra.Command, mgr *backup.Manager, args []string) error {
+	projectName := ""
+	if len(args) > 0 {
+		projectName = args[0]
 	}
-	_ = w.Flush()
+
+	entries, err := mgr.List(projectName)
+	if err != nil {
+		return err
+	}
+
+	if len(entries) == 0 {
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "No backups found."); err != nil {
+			return err
+		}
+		return nil
+	}
+
+	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+	if _, err := fmt.Fprintln(w, "TIMESTAMP\tPROJECT\tSCOPE\tPATH"); err != nil {
+		return err
+	}
+	for _, e := range entries {
+		ts := e.Timestamp.Format("2006-01-02 15:04:05")
+		if _, err := fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", ts, e.Project, e.Scope, e.Path); err != nil {
+			return err
+		}
+	}
+	return w.Flush()
 }
