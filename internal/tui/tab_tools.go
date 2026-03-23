@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/key"
+	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/hystak/hystak/internal/service"
 )
@@ -337,6 +338,14 @@ func (t *toolsTab) handleWizardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return t, nil
 }
 
+// --- Import overlay ---
+
+func (t *toolsTab) handleImportKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	t.importOverlay, cmd = t.importOverlay.update(msg)
+	return t, cmd
+}
+
 // --- View ---
 
 func (t *toolsTab) View() string {
@@ -345,6 +354,8 @@ func (t *toolsTab) View() string {
 		return t.viewPicker()
 	case toolsModeDiff:
 		return t.diffView.view(t.width, t.height)
+	case toolsModeImport:
+		return t.importOverlay.view(t.width, t.height)
 	}
 
 	var b strings.Builder
