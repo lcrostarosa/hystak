@@ -60,9 +60,12 @@ func (s *Service) GetProject(name string) (model.Project, bool) {
 	return s.projects.Get(name)
 }
 
-// SetActiveProfile sets the active profile for a project.
+// SetActiveProfile sets the active profile for a project and persists to disk.
 func (s *Service) SetActiveProfile(projectName, profileName string) error {
-	return s.projects.SetActiveProfile(projectName, profileName)
+	if err := s.projects.SetActiveProfile(projectName, profileName); err != nil {
+		return err
+	}
+	return s.projects.SaveDefault()
 }
 
 // ListServers returns all registered servers sorted by name.
@@ -145,6 +148,9 @@ func (s *Service) syncProject(projectName string, dryRun bool) ([]SyncResult, er
 	sort.Strings(newManagedNames)
 	if err := s.projects.SetManagedMCPs(projectName, newManagedNames); err != nil {
 		return nil, err
+	}
+	if err := s.projects.SaveDefault(); err != nil {
+		return nil, fmt.Errorf("saving projects after sync for %q: %w", projectName, err)
 	}
 
 	return results, nil
