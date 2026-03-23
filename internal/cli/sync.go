@@ -19,6 +19,7 @@ var (
 	syncAll     bool
 	syncProfile string
 	syncDryRun  bool
+	syncForce   bool
 )
 
 var syncCmd = &cobra.Command{
@@ -34,6 +35,7 @@ func init() {
 	syncCmd.Flags().BoolVar(&syncAll, "all", false, "sync all projects (S-034)")
 	syncCmd.Flags().StringVar(&syncProfile, "profile", "", "use a specific profile (S-035)")
 	syncCmd.Flags().BoolVar(&syncDryRun, "dry-run", false, "show sync plan without writing (S-036)")
+	syncCmd.Flags().BoolVar(&syncForce, "force", false, "skip preflight conflict checks")
 	rootCmd.AddCommand(syncCmd)
 }
 
@@ -57,6 +59,21 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if syncProfile != "" {
 		if err := svc.SetActiveProfile(projectName, syncProfile); err != nil {
 			return fmt.Errorf("setting profile %q: %w", syncProfile, err)
+		}
+	}
+
+	// S-046: Preflight conflict check (unless --force)
+	if !syncForce && !syncDryRun {
+		conflicts, prefErr := svc.PreflightCheck(projectName)
+		if prefErr != nil {
+			return fmt.Errorf("preflight check: %w", prefErr)
+		}
+		if len(conflicts) > 0 {
+			fmt.Fprintf(cmd.ErrOrStderr(), "Preflight conflicts (%d):\n", len(conflicts))
+			for _, c := range conflicts {
+				fmt.Fprintf(cmd.ErrOrStderr(), "  %s: %s\n", c.Path, c.Message)
+			}
+			return fmt.Errorf("resolve conflicts before syncing (or use --force to skip)")
 		}
 	}
 
