@@ -31,15 +31,29 @@ type KeyMap struct {
 	SyncFromDiff key.Binding
 }
 
+// keyNameMap translates keyconfig names to bubbletea key.Msg.String() values.
+// Only keys where the name differs from the lowercase string need entries.
+var keyNameMap = map[string]string{
+	"space":  " ",
+	"pgup":   "pgup",
+	"pgdn":   "pgdown",
+	"pgdown": "pgdown",
+}
+
 // newBinding creates a key.Binding from a keyconfig action's key strings and help text.
-// Normalizes key names to lowercase for bubbletea compatibility.
+// Normalizes key names to bubbletea key string format.
 func newBinding(keys []string, helpKey, helpDesc string) key.Binding {
-	lower := make([]string, len(keys))
+	normalized := make([]string, len(keys))
 	for i, k := range keys {
-		lower[i] = strings.ToLower(k)
+		lower := strings.ToLower(k)
+		if mapped, ok := keyNameMap[lower]; ok {
+			normalized[i] = mapped
+		} else {
+			normalized[i] = lower
+		}
 	}
 	return key.NewBinding(
-		key.WithKeys(lower...),
+		key.WithKeys(normalized...),
 		key.WithHelp(helpKey, helpDesc),
 	)
 }

@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/hystak/hystak/internal/config"
 	"github.com/hystak/hystak/internal/deploy"
 	"github.com/hystak/hystak/internal/model"
 	"github.com/hystak/hystak/internal/profile"
@@ -22,6 +23,11 @@ func mkdirAll(t *testing.T, path string) {
 func setupTestService(t *testing.T) (*Service, string) {
 	t.Helper()
 	tmp := t.TempDir()
+
+	// Override config dir so SaveDefault writes to temp dir
+	config.OverrideDir(tmp)
+	t.Cleanup(func() { config.OverrideDir("") })
+
 	projDir := filepath.Join(tmp, "myproject")
 	mkdirAll(t, projDir)
 
