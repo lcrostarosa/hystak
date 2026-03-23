@@ -29,7 +29,7 @@ func NewApp(svc *service.Service, keys KeyMap, version, commit, buildDate string
 	tabs := []Tab{
 		newRegistryTab(keys, svc),
 		newProjectsTab(keys, svc),
-		newToolsTab(keys),
+		newToolsTab(keys, svc),
 		newHelpTab(keys, version, commit, buildDate),
 	}
 	return App{
