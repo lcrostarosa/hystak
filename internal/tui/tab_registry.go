@@ -8,7 +8,6 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/hystak/hystak/internal/model"
 	"github.com/hystak/hystak/internal/service"
 )
 
@@ -40,6 +39,7 @@ const (
 )
 
 // registryTab is the Registry tab — shows all managed resources with sub-navigation.
+// Uses the subView abstraction to handle all 6 resource types uniformly.
 type registryTab struct {
 	keys   KeyMap
 	svc    *service.Service
@@ -49,11 +49,11 @@ type registryTab struct {
 	height int
 	err    string // transient error message
 
-	// List state
-	servers  []model.ServerDef
-	filtered []model.ServerDef
+	// List state (generic across all sub-navs)
+	items    []listItem
+	filtered []listItem
 	cursor   int
-	selected map[string]bool // multi-select by name
+	selected map[string]bool
 
 	// Filter state
 	filterInput textinput.Model
@@ -61,12 +61,12 @@ type registryTab struct {
 
 	// Form state
 	form     formModel
-	editName string // non-empty means editing existing server
+	editName string
 
 	// Confirm state
 	confirm     confirmModel
 	deleteName  string
-	deleteNames []string // batch delete
+	deleteNames []string
 }
 
 func newRegistryTab(keys KeyMap, svc *service.Service) *registryTab {
@@ -86,62 +86,41 @@ func (t *registryTab) Title() string { return "Registry" }
 func (t *registryTab) HelpKeys() []HelpEntry {
 	switch t.mode {
 	case modeFilter:
-		return []HelpEntry{
-			{"Esc", "Clear filter"},
-			{"Enter", "Apply"},
-		}
+		return []HelpEntry{{"Esc", "Clear filter"}, {"Enter", "Apply"}}
 	case modeForm:
-		return []HelpEntry{
-			{"Tab", "Next field"},
-			{"Enter", "Save"},
-			{"Esc", "Cancel"},
-		}
+		return []HelpEntry{{"Tab", "Next field"}, {"Enter", "Save"}, {"Esc", "Cancel"}}
 	case modeConfirm:
-		return []HelpEntry{
-			{"Y", "Confirm"},
-			{"N/Esc", "Cancel"},
-		}
+		return []HelpEntry{{"Y", "Confirm"}, {"N/Esc", "Cancel"}}
 	default:
 		return []HelpEntry{
-			{"A", "Add"},
-			{"E", "Edit"},
-			{"D", "Delete"},
-			{"/", "Filter"},
-			{"Space", "Select"},
+			{"A", "Add"}, {"E", "Edit"}, {"D", "Delete"},
+			{"/", "Filter"}, {"Space", "Select"},
 		}
 	}
 }
 
-// registryLoadedMsg is sent when registry data has been loaded asynchronously.
-type registryLoadedMsg struct {
-	servers []model.ServerDef
-}
+// --- Messages ---
 
-// serverSavedMsg is sent after a server has been successfully added/updated.
+type registryLoadedMsg struct{ items []listItem }
 type serverSavedMsg struct{}
-
-// serverDeletedMsg is sent after server(s) have been successfully deleted.
 type serverDeletedMsg struct{}
+type serverErrorMsg struct{ err error }
 
-// serverErrorMsg is sent when a CRUD operation fails.
-type serverErrorMsg struct {
-	err error
-}
+// --- Init / Update ---
 
 func (t *registryTab) Init() tea.Cmd {
 	return t.loadData
 }
 
 func (t *registryTab) loadData() tea.Msg {
-	return registryLoadedMsg{
-		servers: t.svc.ListServers(),
-	}
+	sv := subViews[t.sub]
+	return registryLoadedMsg{items: sv.loadItems(t.svc)}
 }
 
 func (t *registryTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case registryLoadedMsg:
-		t.servers = msg.servers
+		t.items = msg.items
 		t.applyFilter()
 		t.clampCursor()
 		t.err = ""
@@ -198,7 +177,6 @@ func (t *registryTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return t.handleListKey(msg)
 		}
 	}
-
 	return t, nil
 }
 
@@ -216,7 +194,7 @@ func (t *registryTab) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	case key.Matches(msg, t.keys.Select):
 		if len(t.filtered) > 0 {
-			name := t.filtered[t.cursor].Name
+			name := t.filtered[t.cursor].name
 			t.selected[name] = !t.selected[name]
 			if !t.selected[name] {
 				delete(t.selected, name)
@@ -227,7 +205,7 @@ func (t *registryTab) handleListKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return t, textinput.Blink
 	case key.Matches(msg, t.keys.Edit):
 		if len(t.filtered) > 0 {
-			t.openEditForm(t.filtered[t.cursor])
+			t.openEditForm(t.filtered[t.cursor].name)
 			return t, textinput.Blink
 		}
 	case key.Matches(msg, t.keys.Delete):
@@ -267,10 +245,8 @@ func (t *registryTab) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		t.mode = modeList
 		return t, nil
 	}
-
 	var cmd tea.Cmd
 	t.filterInput, cmd = t.filterInput.Update(msg)
-	// Live filtering as user types
 	t.filterText = t.filterInput.Value()
 	t.applyFilter()
 	t.clampCursor()
@@ -280,30 +256,22 @@ func (t *registryTab) handleFilterKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // --- Form mode ---
 
 func (t *registryTab) openAddForm() {
+	sv := subViews[t.sub]
 	t.editName = ""
-	t.form = newFormModel("Add MCP Server", []FormField{
-		{Label: "Name", Placeholder: "server-name"},
-		{Label: "Transport", Placeholder: "stdio | sse | http", Value: "stdio"},
-		{Label: "Command", Placeholder: "npx"},
-		{Label: "Args", Placeholder: "-y, @anthropic/mcp-github"},
-		{Label: "URL", Placeholder: "https://..."},
-		{Label: "Env", Placeholder: "KEY=val, KEY2=val2"},
-		{Label: "Description", Placeholder: "optional description"},
-	}, t.keys)
+	title := "Add " + subNavNames[t.sub][:len(subNavNames[t.sub])-1] // strip trailing 's'
+	t.form = newFormModel(title, sv.addFields(), t.keys)
 	t.mode = modeForm
 }
 
-func (t *registryTab) openEditForm(srv model.ServerDef) {
-	t.editName = srv.Name
-	t.form = newFormModel("Edit MCP Server", []FormField{
-		{Label: "Name", Placeholder: "server-name", Value: srv.Name},
-		{Label: "Transport", Placeholder: "stdio | sse | http", Value: string(srv.Transport)},
-		{Label: "Command", Placeholder: "npx", Value: srv.Command},
-		{Label: "Args", Placeholder: "-y, @anthropic/mcp-github", Value: strings.Join(srv.Args, ", ")},
-		{Label: "URL", Placeholder: "https://...", Value: srv.URL},
-		{Label: "Env", Placeholder: "KEY=val, KEY2=val2", Value: formatEnv(srv.Env)},
-		{Label: "Description", Placeholder: "optional description", Value: srv.Description},
-	}, t.keys)
+func (t *registryTab) openEditForm(name string) {
+	sv := subViews[t.sub]
+	fields := sv.editFields(name, t.svc)
+	if fields == nil {
+		return
+	}
+	t.editName = name
+	title := "Edit " + subNavNames[t.sub][:len(subNavNames[t.sub])-1]
+	t.form = newFormModel(title, fields, t.keys)
 	t.mode = modeForm
 }
 
@@ -314,32 +282,13 @@ func (t *registryTab) handleFormKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (t *registryTab) handleFormSubmit(values map[string]string) tea.Cmd {
+	sv := subViews[t.sub]
 	editName := t.editName
 	svc := t.svc
+	saveFn := sv.save
 	return func() tea.Msg {
-		transport := model.Transport(strings.TrimSpace(values["Transport"]))
-		if !transport.Valid() {
-			return serverErrorMsg{err: fmt.Errorf("invalid transport %q", transport)}
-		}
-
-		srv := model.ServerDef{
-			Name:        strings.TrimSpace(values["Name"]),
-			Transport:   transport,
-			Command:     strings.TrimSpace(values["Command"]),
-			Args:        parseCSV(values["Args"]),
-			URL:         strings.TrimSpace(values["URL"]),
-			Env:         parseKV(values["Env"]),
-			Description: strings.TrimSpace(values["Description"]),
-		}
-
-		if editName != "" {
-			if err := svc.UpdateServer(srv); err != nil {
-				return serverErrorMsg{err: err}
-			}
-		} else {
-			if err := svc.AddServer(srv); err != nil {
-				return serverErrorMsg{err: err}
-			}
+		if err := saveFn(svc, values, editName); err != nil {
+			return serverErrorMsg{err: err}
 		}
 		return serverSavedMsg{}
 	}
@@ -348,7 +297,7 @@ func (t *registryTab) handleFormSubmit(values map[string]string) tea.Cmd {
 // --- Confirm/Delete mode ---
 
 func (t *registryTab) openDelete() tea.Cmd {
-	// Batch delete if anything selected
+	kind := subNavNames[t.sub]
 	if len(t.selected) > 0 {
 		names := make([]string, 0, len(t.selected))
 		for name := range t.selected {
@@ -356,22 +305,20 @@ func (t *registryTab) openDelete() tea.Cmd {
 		}
 		t.deleteNames = names
 		t.confirm = newConfirmModel(
-			"Delete Servers",
-			fmt.Sprintf("Delete %d selected server(s)?", len(names)),
+			"Delete "+kind,
+			fmt.Sprintf("Delete %d selected item(s)?", len(names)),
 		)
 		t.mode = modeConfirm
 		return nil
 	}
-
-	// Single delete
 	if len(t.filtered) == 0 {
 		return nil
 	}
-	name := t.filtered[t.cursor].Name
+	name := t.filtered[t.cursor].name
 	t.deleteName = name
 	t.confirm = newConfirmModel(
-		"Delete Server",
-		fmt.Sprintf("Delete server %q?", name),
+		"Delete "+kind[:len(kind)-1],
+		fmt.Sprintf("Delete %q?", name),
 	)
 	t.mode = modeConfirm
 	return nil
@@ -384,14 +331,16 @@ func (t *registryTab) handleConfirmKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (t *registryTab) handleConfirmYes() tea.Cmd {
+	sv := subViews[t.sub]
 	svc := t.svc
+	deleteFn := sv.delete
 	names := t.deleteNames
 	if len(names) == 0 && t.deleteName != "" {
 		names = []string{t.deleteName}
 	}
 	return func() tea.Msg {
 		for _, name := range names {
-			if err := svc.DeleteServer(name); err != nil {
+			if err := deleteFn(svc, name); err != nil {
 				return serverErrorMsg{err: err}
 			}
 		}
@@ -403,14 +352,14 @@ func (t *registryTab) handleConfirmYes() tea.Cmd {
 
 func (t *registryTab) applyFilter() {
 	if t.filterText == "" {
-		t.filtered = t.servers
+		t.filtered = t.items
 		return
 	}
 	lower := strings.ToLower(t.filterText)
-	filtered := make([]model.ServerDef, 0, len(t.servers))
-	for _, s := range t.servers {
-		if strings.Contains(strings.ToLower(s.Name), lower) {
-			filtered = append(filtered, s)
+	filtered := make([]listItem, 0, len(t.items))
+	for _, item := range t.items {
+		if strings.Contains(strings.ToLower(item.name), lower) {
+			filtered = append(filtered, item)
 		}
 	}
 	t.filtered = filtered
@@ -419,7 +368,7 @@ func (t *registryTab) applyFilter() {
 func (t *registryTab) clearFilter() {
 	t.filterText = ""
 	t.filterInput.SetValue("")
-	t.filtered = t.servers
+	t.filtered = t.items
 }
 
 func (t *registryTab) clampCursor() {
@@ -431,7 +380,6 @@ func (t *registryTab) clampCursor() {
 // --- View ---
 
 func (t *registryTab) View() string {
-	// If a modal is active, render it over the list
 	switch t.mode {
 	case modeForm:
 		return t.form.View(t.width, t.height)
@@ -453,52 +401,37 @@ func (t *registryTab) View() string {
 	}
 	b.WriteString("\n\n")
 
-	// Error message
 	if t.err != "" {
 		b.WriteString("  " + styleError.Render("Error: "+t.err) + "\n\n")
-	}
-
-	// Non-MCPs sub-nav: placeholder
-	if t.sub != SubNavMCPs {
-		b.WriteString(styleListHeader.Render(
-			fmt.Sprintf("  %s — coming soon", subNavNames[t.sub]),
-		))
-		b.WriteString("\n")
-		return b.String()
 	}
 
 	// Filter bar
 	if t.mode == modeFilter {
 		b.WriteString("  Filter: " + t.filterInput.View() + "\n\n")
 	} else if t.filterText != "" {
-		b.WriteString("  " + styleHelpDesc.Render(fmt.Sprintf("Filter: %q (%d/%d)", t.filterText, len(t.filtered), len(t.servers))) + "\n\n")
+		b.WriteString("  " + styleHelpDesc.Render(fmt.Sprintf("Filter: %q (%d/%d)", t.filterText, len(t.filtered), len(t.items))) + "\n\n")
 	}
 
 	// Column header
-	b.WriteString(styleListHeader.Render(
-		fmt.Sprintf("  %-2s %-20s  %-10s  %s", "", "NAME", "TRANSPORT", "COMMAND/URL"),
-	))
+	sv := subViews[t.sub]
+	b.WriteString(styleListHeader.Render(sv.header))
 	b.WriteString("\n")
 
 	if len(t.filtered) == 0 {
 		if t.filterText != "" {
 			b.WriteString("  (no matches)\n")
 		} else {
-			b.WriteString("  (no servers registered)\n")
+			b.WriteString("  (none registered)\n")
 		}
 		return b.String()
 	}
 
-	for i, s := range t.filtered {
-		endpoint := s.Command
-		if s.Transport == model.TransportSSE || s.Transport == model.TransportHTTP {
-			endpoint = s.URL
-		}
+	for i, item := range t.filtered {
 		sel := "  "
-		if t.selected[s.Name] {
+		if t.selected[item.name] {
 			sel = styleSynced.Render("* ")
 		}
-		line := fmt.Sprintf("  %s%-20s  %-10s  %s", sel, truncate(s.Name, 20), s.Transport, truncate(endpoint, 40))
+		line := "  " + sel + formatColumns(item.columns)
 		if i == t.cursor {
 			b.WriteString(styleListSelected.Render(line))
 		} else {
@@ -509,9 +442,24 @@ func (t *registryTab) View() string {
 	return b.String()
 }
 
+// formatColumns joins columns with appropriate padding.
+func formatColumns(cols []string) string {
+	if len(cols) == 0 {
+		return ""
+	}
+	// Use fixed-width formatting matching the header
+	var b strings.Builder
+	for i, c := range cols {
+		if i > 0 {
+			b.WriteString("  ")
+		}
+		b.WriteString(c)
+	}
+	return b.String()
+}
+
 // --- Parsing helpers ---
 
-// parseCSV splits a comma-separated string into trimmed parts.
 func parseCSV(s string) []string {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -528,7 +476,6 @@ func parseCSV(s string) []string {
 	return result
 }
 
-// parseKV parses "KEY=val, KEY2=val2" into a map.
 func parseKV(s string) map[string]string {
 	s = strings.TrimSpace(s)
 	if s == "" {
@@ -552,7 +499,6 @@ func parseKV(s string) map[string]string {
 	return result
 }
 
-// formatEnv formats a map as "KEY=val, KEY2=val2" in sorted key order.
 func formatEnv(m map[string]string) string {
 	if len(m) == 0 {
 		return ""
@@ -569,7 +515,6 @@ func formatEnv(m map[string]string) string {
 	return strings.Join(parts, ", ")
 }
 
-// truncate shortens a string to max length, appending "..." if truncated.
 func truncate(s string, max int) string {
 	if len(s) <= max {
 		return s
