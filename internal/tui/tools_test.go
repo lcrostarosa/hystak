@@ -154,7 +154,7 @@ func TestDiffView_Navigation(t *testing.T) {
 		t.Fatalf("initial cursor = %d, want 0", dv.cursor)
 	}
 
-	dv = dv.update(tea.KeyMsg{Type: tea.KeyDown})
+	dv, _ = dv.update(tea.KeyMsg{Type: tea.KeyDown})
 	if dv.cursor != 1 {
 		t.Errorf("cursor after down = %d, want 1", dv.cursor)
 	}

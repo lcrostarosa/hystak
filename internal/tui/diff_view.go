@@ -10,6 +10,9 @@ import (
 	"github.com/hystak/hystak/internal/service"
 )
 
+// diffSyncRequestMsg signals user pressed S to sync from the diff view (S-051).
+type diffSyncRequestMsg struct{}
+
 // diffViewModel displays drift results for a project.
 type diffViewModel struct {
 	results []service.DiffResult
@@ -22,10 +25,10 @@ func newDiffViewModel(results []service.DiffResult, keys KeyMap) diffViewModel {
 }
 
 func (m diffViewModel) helpKeys() []HelpEntry {
-	return []HelpEntry{{"Esc", "Close"}}
+	return []HelpEntry{{"S", "Sync now"}, {"Esc", "Close"}}
 }
 
-func (m diffViewModel) update(msg tea.KeyMsg) diffViewModel {
+func (m diffViewModel) update(msg tea.KeyMsg) (diffViewModel, tea.Cmd) {
 	switch {
 	case key.Matches(msg, m.keys.ListUp):
 		if m.cursor > 0 {
@@ -35,8 +38,10 @@ func (m diffViewModel) update(msg tea.KeyMsg) diffViewModel {
 		if m.cursor < len(m.results)-1 {
 			m.cursor++
 		}
+	case key.Matches(msg, m.keys.SyncFromDiff):
+		return m, func() tea.Msg { return diffSyncRequestMsg{} }
 	}
-	return m
+	return m, nil
 }
 
 func (m diffViewModel) view(width, height int) string {
@@ -63,7 +68,6 @@ func (m diffViewModel) view(width, height int) string {
 		b.WriteString("\n")
 	}
 
-	// Show detail for selected server
 	if m.cursor < len(m.results) {
 		r := m.results[m.cursor]
 		if r.Status == model.DriftDrifted {
@@ -72,7 +76,9 @@ func (m diffViewModel) view(width, height int) string {
 		}
 	}
 
-	b.WriteString("\n  " + styleHelpKey.Render("Esc") + styleHelpDesc.Render(":Close"))
+	b.WriteString("\n  " +
+		styleHelpKey.Render("S") + styleHelpDesc.Render(":Sync now  ") +
+		styleHelpKey.Render("Esc") + styleHelpDesc.Render(":Close"))
 
 	content := b.String()
 	box := styleOverlayBorder.Width(min(width-4, 70)).Render(content)

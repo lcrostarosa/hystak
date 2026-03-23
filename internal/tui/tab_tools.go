@@ -172,6 +172,19 @@ func (t *toolsTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.mode = toolsModeGrid
 		return t, nil
 
+	case diffSyncRequestMsg:
+		// S-051: Sync from diff view — use the project from the pending action
+		if len(t.projects) > 0 && t.projectCursor < len(t.projects) {
+			projName := t.projects[t.projectCursor]
+			svc := t.svc
+			return t, func() tea.Msg {
+				results, err := svc.SyncProject(projName)
+				return toolsSyncDoneMsg{results: results, err: err}
+			}
+		}
+		t.mode = toolsModeGrid
+		return t, nil
+
 	case importScanDoneMsg, importApplyDoneMsg:
 		t.importOverlay, _ = t.importOverlay.update(msg)
 		return t, nil
@@ -314,8 +327,9 @@ func (t *toolsTab) handleDiffKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		t.mode = toolsModeGrid
 		return t, nil
 	}
-	t.diffView = t.diffView.update(msg)
-	return t, nil
+	var cmd tea.Cmd
+	t.diffView, cmd = t.diffView.update(msg)
+	return t, cmd
 }
 
 // --- Discover overlay ---
