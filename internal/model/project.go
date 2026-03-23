@@ -67,6 +67,7 @@ type ProjectProfile struct {
 	Template    string            `yaml:"template,omitempty"`
 	Prompts     []string          `yaml:"prompts,omitempty"`
 	Env         map[string]string `yaml:"env,omitempty"`
+	Tags        []string          `yaml:"tags,omitempty"`
 	Isolation   IsolationStrategy `yaml:"isolation,omitempty"`
 }
 

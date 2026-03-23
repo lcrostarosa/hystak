@@ -219,12 +219,13 @@ func (s *Service) buildDeployConfig(prof model.ProjectProfile) deploy.DeployConf
 	}
 }
 
-// resolveServers looks up each MCP in the profile, applies overrides, and
-// returns the final server map. Returns an error if any server is not in
-// the registry (S-041).
+// resolveServers looks up each MCP in the profile, applies overrides, expands
+// tags (S-021), and returns the final server map. Returns an error if any
+// server or tag reference is invalid (S-041, S-022).
 func (s *Service) resolveServers(prof model.ProjectProfile) (map[string]model.ServerDef, error) {
 	result := make(map[string]model.ServerDef, len(prof.MCPs))
 
+	// Direct MCP assignments with overrides
 	for _, assignment := range prof.MCPs {
 		srv, ok := s.registry.Servers.Get(assignment.Name)
 		if !ok {
@@ -232,6 +233,24 @@ func (s *Service) resolveServers(prof model.ProjectProfile) (map[string]model.Se
 		}
 		resolved := assignment.Overrides.Apply(srv)
 		result[assignment.Name] = resolved
+	}
+
+	// Tag expansion (S-021): add tag members not already assigned directly
+	for _, tagName := range prof.Tags {
+		members, ok := s.registry.GetTag(tagName)
+		if !ok {
+			return nil, fmt.Errorf("tag %q not found", tagName)
+		}
+		for _, memberName := range members {
+			if _, already := result[memberName]; already {
+				continue // already assigned directly, skip
+			}
+			srv, ok := s.registry.Servers.Get(memberName)
+			if !ok {
+				return nil, fmt.Errorf("tag %q references non-existent server %q", tagName, memberName)
+			}
+			result[memberName] = srv
+		}
 	}
 
 	return result, nil

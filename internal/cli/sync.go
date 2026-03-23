@@ -15,28 +15,63 @@ import (
 	"github.com/spf13/cobra"
 )
 
+var (
+	syncAll     bool
+	syncProfile string
+	syncDryRun  bool
+)
+
 var syncCmd = &cobra.Command{
-	Use:         "sync <project>",
+	Use:         "sync [project]",
 	Short:       "Deploy project configs",
 	Long:        "Resolve the active profile and deploy MCP servers to client config files.",
-	Args:        cobra.ExactArgs(1),
+	Args:        cobra.MaximumNArgs(1),
 	Annotations: map[string]string{"mutates": "true"},
 	RunE:        runSync,
 }
 
 func init() {
+	syncCmd.Flags().BoolVar(&syncAll, "all", false, "sync all projects (S-034)")
+	syncCmd.Flags().StringVar(&syncProfile, "profile", "", "use a specific profile (S-035)")
+	syncCmd.Flags().BoolVar(&syncDryRun, "dry-run", false, "show sync plan without writing (S-036)")
 	rootCmd.AddCommand(syncCmd)
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
+	if !syncAll && len(args) == 0 {
+		return fmt.Errorf("project name is required (or use --all)")
+	}
+
 	svc, err := buildService()
 	if err != nil {
 		return err
 	}
 
-	results, err := svc.SyncProject(args[0])
+	if syncAll {
+		return runSyncAll(cmd, svc)
+	}
+
+	projectName := args[0]
+
+	// S-035: Override active profile if --profile flag is set
+	if syncProfile != "" {
+		if err := svc.SetActiveProfile(projectName, syncProfile); err != nil {
+			return fmt.Errorf("setting profile %q: %w", syncProfile, err)
+		}
+	}
+
+	var results []service.SyncResult
+	if syncDryRun {
+		results, err = svc.DryRunSync(projectName)
+	} else {
+		results, err = svc.SyncProject(projectName)
+	}
 	if err != nil {
 		return err
+	}
+
+	if syncDryRun {
+		fmt.Fprintln(cmd.OutOrStdout(), "Dry run (no changes written):")
 	}
 
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
@@ -46,6 +81,42 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 	return w.Flush()
+}
+
+// runSyncAll syncs every registered project (S-034).
+func runSyncAll(cmd *cobra.Command, svc *service.Service) error {
+	projects := svc.ListProjects()
+	if len(projects) == 0 {
+		fmt.Fprintln(cmd.OutOrStdout(), "No projects registered.")
+		return nil
+	}
+
+	for _, p := range projects {
+		fmt.Fprintf(cmd.OutOrStdout(), "--- %s ---\n", p.Name)
+
+		var results []service.SyncResult
+		var err error
+		if syncDryRun {
+			results, err = svc.DryRunSync(p.Name)
+		} else {
+			results, err = svc.SyncProject(p.Name)
+		}
+		if err != nil {
+			fmt.Fprintf(cmd.ErrOrStderr(), "  error: %v\n", err)
+			continue
+		}
+
+		w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
+		for _, r := range results {
+			if _, err := fmt.Fprintf(w, "  %s\t%s\n", r.Name, r.Action); err != nil {
+				return err
+			}
+		}
+		if err := w.Flush(); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // buildService creates a fully wired Service from default config paths.
