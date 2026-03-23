@@ -69,6 +69,11 @@ func buildService() (*service.Service, error) {
 
 	svc := service.New(reg, projStore, profMgr, dep)
 	svc.WithBackup(backup.NewDefaultManager())
+	svc.WithResourceDeployers(
+		&deploy.SkillsDeployer{},
+		&deploy.SettingsDeployer{},
+		&deploy.ClaudeMDDeployer{},
+	)
 	return svc, nil
 }
 

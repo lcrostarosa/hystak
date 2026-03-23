@@ -32,11 +32,12 @@ type SyncResult struct {
 
 // Service orchestrates sync, diff, import, and discovery operations.
 type Service struct {
-	registry *registry.Registry
-	projects *project.Store
-	profiles *profile.Manager
-	deployer deploy.Deployer
-	backup   *backup.Manager
+	registry          *registry.Registry
+	projects          *project.Store
+	profiles          *profile.Manager
+	deployer          deploy.Deployer
+	resourceDeployers []deploy.ResourceDeployer
+	backup            *backup.Manager
 }
 
 // New creates a new Service.
@@ -52,6 +53,12 @@ func New(reg *registry.Registry, proj *project.Store, prof *profile.Manager, dep
 // WithBackup attaches a backup manager to the service (S-040).
 func (s *Service) WithBackup(mgr *backup.Manager) *Service {
 	s.backup = mgr
+	return s
+}
+
+// WithResourceDeployers attaches resource deployers for skills, settings, CLAUDE.md.
+func (s *Service) WithResourceDeployers(rds ...deploy.ResourceDeployer) *Service {
+	s.resourceDeployers = rds
 	return s
 }
 
@@ -140,6 +147,14 @@ func (s *Service) syncProject(projectName string, dryRun bool) ([]SyncResult, er
 		return nil, fmt.Errorf("writing servers for %q: %w", projectName, err)
 	}
 
+	// Deploy resources (skills, settings, CLAUDE.md)
+	dcfg := s.buildDeployConfig(prof)
+	for _, rd := range s.resourceDeployers {
+		if err := rd.Sync(proj.Path, dcfg); err != nil {
+			return nil, fmt.Errorf("syncing %s for project %q: %w", rd.Kind(), projectName, err)
+		}
+	}
+
 	// Update managed MCPs tracking (sorted for deterministic YAML output)
 	newManagedNames := make([]string, 0, len(resolved))
 	for name := range resolved {
@@ -154,6 +169,54 @@ func (s *Service) syncProject(projectName string, dryRun bool) ([]SyncResult, er
 	}
 
 	return results, nil
+}
+
+// buildDeployConfig resolves profile resource references into a DeployConfig
+// for resource deployers. The service never touches file formats — each
+// deployer owns its own file format entirely (architecture SRP).
+func (s *Service) buildDeployConfig(prof model.ProjectProfile) deploy.DeployConfig {
+	skills := make([]model.SkillDef, 0, len(prof.Skills))
+	for _, name := range prof.Skills {
+		if skill, ok := s.registry.Skills.Get(name); ok {
+			skills = append(skills, skill)
+		}
+	}
+
+	hooks := make([]model.HookDef, 0, len(prof.Hooks))
+	for _, name := range prof.Hooks {
+		if hook, ok := s.registry.Hooks.Get(name); ok {
+			hooks = append(hooks, hook)
+		}
+	}
+
+	perms := make([]model.PermissionRule, 0, len(prof.Permissions))
+	for _, name := range prof.Permissions {
+		if perm, ok := s.registry.Permissions.Get(name); ok {
+			perms = append(perms, perm)
+		}
+	}
+
+	var templateSource string
+	if prof.Template != "" {
+		if tmpl, ok := s.registry.Templates.Get(prof.Template); ok {
+			templateSource = tmpl.Source
+		}
+	}
+
+	promptSources := make([]string, 0, len(prof.Prompts))
+	for _, name := range prof.Prompts {
+		if prompt, ok := s.registry.Prompts.Get(name); ok {
+			promptSources = append(promptSources, prompt.Source)
+		}
+	}
+
+	return deploy.DeployConfig{
+		Skills:         skills,
+		Hooks:          hooks,
+		Permissions:    perms,
+		TemplateSource: templateSource,
+		PromptSources:  promptSources,
+	}
 }
 
 // resolveServers looks up each MCP in the profile, applies overrides, and
