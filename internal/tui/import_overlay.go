@@ -278,7 +278,7 @@ func (m importModel) view(width, height int) string {
 
 	case importModeConflict:
 		c := m.candidates[m.conflictIdx]
-		b.WriteString(fmt.Sprintf("Conflict: %q already exists in registry.\n\n", c.Name))
+		fmt.Fprintf(&b, "Conflict: %q already exists in registry.\n\n", c.Name)
 		b.WriteString("  " + styleHelpKey.Render("K") + styleHelpDesc.Render(":Keep existing  "))
 		b.WriteString(styleHelpKey.Render("R") + styleHelpDesc.Render(":Replace  "))
 		b.WriteString(styleHelpKey.Render("S") + styleHelpDesc.Render(":Skip  "))

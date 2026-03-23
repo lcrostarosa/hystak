@@ -61,13 +61,13 @@ func (t *helpTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (t *helpTab) View() string {
 	var b strings.Builder
 
-	b.WriteString(fmt.Sprintf("  hystak %s (%s, %s)\n\n", t.version, t.commit, t.buildDate))
+	fmt.Fprintf(&b, "  hystak %s (%s, %s)\n\n", t.version, t.commit, t.buildDate)
 
 	section := func(title string) {
 		b.WriteString("  " + styleTitle.Render(title) + "\n")
 	}
 	entry := func(key, desc string) {
-		b.WriteString(fmt.Sprintf("  %-20s  %s\n", styleHelpKey.Render(key), desc))
+		fmt.Fprintf(&b, "  %-20s  %s\n", styleHelpKey.Render(key), desc)
 	}
 
 	section("Navigation")
