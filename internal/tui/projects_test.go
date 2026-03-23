@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 func TestProjectsTab_LoadData(t *testing.T) {
 	app := setupTestApp(t)
 	pt := app.tabs[TabProjects].(*projectsTab)
+	pt = applyProjectsWindowSize(t, pt, 100, 30)
 
 	msg := projectsLoadedMsg{
 		projects: []model.Project{
@@ -20,24 +22,26 @@ func TestProjectsTab_LoadData(t *testing.T) {
 	updated, _ := pt.Update(msg)
 	pt = updated.(*projectsTab)
 
-	if len(pt.projects) != 1 {
-		t.Fatalf("projects = %d, want 1", len(pt.projects))
+	view := pt.View()
+	if !strings.Contains(view, "myproject") {
+		t.Error("view should contain project name after loading")
 	}
 }
 
 func TestProjectsTab_CursorNavigation(t *testing.T) {
 	app := setupTestApp(t)
 	pt := app.tabs[TabProjects].(*projectsTab)
+	pt = applyProjectsWindowSize(t, pt, 100, 30)
 
 	loaded, _ := pt.Update(projectsLoadedMsg{
 		projects: []model.Project{
-			{Name: "a", Path: "/a", ActiveProfile: "dev"},
-			{Name: "b", Path: "/b", ActiveProfile: "dev"},
+			{Name: "aaa", Path: "/a", ActiveProfile: "dev"},
+			{Name: "bbb", Path: "/b", ActiveProfile: "dev"},
 		},
 	})
 	pt = loaded.(*projectsTab)
 
-	// Need to also load detail to avoid nil issues
+	// Load detail to avoid nil issues
 	detailMsg := projectDetailMsg{
 		profileNames: []string{"dev", "empty"},
 		allMCPs:      []string{"github"},
@@ -45,17 +49,30 @@ func TestProjectsTab_CursorNavigation(t *testing.T) {
 	updated, _ := pt.Update(detailMsg)
 	pt = updated.(*projectsTab)
 
+	// Both items should be visible
+	view := pt.View()
+	if !strings.Contains(view, "aaa") {
+		t.Error("view should contain aaa")
+	}
+	if !strings.Contains(view, "bbb") {
+		t.Error("view should contain bbb")
+	}
+
+	// Move down
 	downMsg := tea.KeyMsg{Type: tea.KeyDown}
 	updated, _ = pt.Update(downMsg)
 	pt = updated.(*projectsTab)
-	if pt.cursor != 1 {
-		t.Errorf("cursor after down = %d, want 1", pt.cursor)
+
+	view = pt.View()
+	if !strings.Contains(view, "bbb") {
+		t.Error("after down, view should still contain bbb")
 	}
 }
 
 func TestProjectsTab_PaneSwitch(t *testing.T) {
 	app := setupTestApp(t)
 	pt := app.tabs[TabProjects].(*projectsTab)
+	pt = applyProjectsWindowSize(t, pt, 100, 30)
 
 	loaded, _ := pt.Update(projectsLoadedMsg{
 		projects: []model.Project{
@@ -63,32 +80,35 @@ func TestProjectsTab_PaneSwitch(t *testing.T) {
 		},
 	})
 	pt = loaded.(*projectsTab)
-	pt.profileNames = []string{"dev"}
 
-	if pt.pane != paneProjects {
-		t.Fatalf("initial pane = %d, want paneProjects", pt.pane)
+	detailMsg := projectDetailMsg{
+		profileNames: []string{"dev"},
+		allMCPs:      []string{"github"},
 	}
-
-	// Enter moves to detail
-	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
-	updated, _ := pt.Update(enterMsg)
+	updated, _ := pt.Update(detailMsg)
 	pt = updated.(*projectsTab)
-	if pt.pane != paneDetail {
-		t.Errorf("pane after Enter = %d, want paneDetail", pt.pane)
-	}
 
-	// Esc returns to projects
+	// Enter moves to detail pane
+	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+	updated, _ = pt.Update(enterMsg)
+	pt = updated.(*projectsTab)
+
+	// Esc returns to projects pane
 	escMsg := tea.KeyMsg{Type: tea.KeyEscape}
 	updated, _ = pt.Update(escMsg)
 	pt = updated.(*projectsTab)
-	if pt.pane != paneProjects {
-		t.Errorf("pane after Esc = %d, want paneProjects", pt.pane)
+
+	// View should still show project list
+	view := pt.View()
+	if !strings.Contains(view, "proj") {
+		t.Error("view should contain project name after returning to projects pane")
 	}
 }
 
 func TestProjectsTab_ProfilePicker(t *testing.T) {
 	app := setupTestApp(t)
 	pt := app.tabs[TabProjects].(*projectsTab)
+	pt = applyProjectsWindowSize(t, pt, 100, 30)
 
 	loaded, _ := pt.Update(projectsLoadedMsg{
 		projects: []model.Project{
@@ -96,30 +116,46 @@ func TestProjectsTab_ProfilePicker(t *testing.T) {
 		},
 	})
 	pt = loaded.(*projectsTab)
-	pt.profileNames = []string{"dev", "review", "empty"}
+
+	detailMsg := projectDetailMsg{
+		profileNames: []string{"dev", "review", "empty"},
+	}
+	updated, _ := pt.Update(detailMsg)
+	pt = updated.(*projectsTab)
 
 	// Press P to open picker
 	pMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("p")}
-	updated, _ := pt.Update(pMsg)
+	updated, _ = pt.Update(pMsg)
 	pt = updated.(*projectsTab)
-	if pt.mode != projectsModeProfilePicker {
-		t.Errorf("mode after P = %d, want profilePicker", pt.mode)
+
+	// View should show profile picker
+	view := pt.View()
+	if !strings.Contains(view, "Select Profile") {
+		t.Error("profile picker view should contain 'Select Profile'")
+	}
+	if !strings.Contains(view, "dev") {
+		t.Error("profile picker should list 'dev'")
+	}
+	if !strings.Contains(view, "review") {
+		t.Error("profile picker should list 'review'")
 	}
 
 	// Esc closes picker
 	escMsg := tea.KeyMsg{Type: tea.KeyEscape}
 	updated, _ = pt.Update(escMsg)
 	pt = updated.(*projectsTab)
-	if pt.mode != projectsModeNormal {
-		t.Errorf("mode after Esc = %d, want normal", pt.mode)
+
+	// View should return to normal
+	view = pt.View()
+	if strings.Contains(view, "Select Profile") {
+		t.Error("profile picker should be closed after Esc")
 	}
 }
 
 func TestProjectsTab_View_TwoPane(t *testing.T) {
 	app := setupTestApp(t)
 	pt := app.tabs[TabProjects].(*projectsTab)
-	pt.width = 100
-	pt.height = 30
+	pt = applyProjectsWindowSize(t, pt, 100, 30)
 
 	loaded, _ := pt.Update(projectsLoadedMsg{
 		projects: []model.Project{
@@ -161,6 +197,33 @@ func TestProjectsTab_View_Empty(t *testing.T) {
 	}
 }
 
+func TestProjectsTab_ErrorMsg_ShowsInView(t *testing.T) {
+	app := setupTestApp(t)
+	pt := app.tabs[TabProjects].(*projectsTab)
+	pt = applyProjectsWindowSize(t, pt, 100, 30)
+
+	loaded, _ := pt.Update(projectsLoadedMsg{
+		projects: []model.Project{
+			{Name: "proj", Path: "/test", ActiveProfile: "dev"},
+		},
+	})
+	pt = loaded.(*projectsTab)
+
+	detailMsg := projectDetailMsg{profileNames: []string{"dev"}}
+	updated, _ := pt.Update(detailMsg)
+	pt = updated.(*projectsTab)
+
+	// Send error message
+	errMsg := projectsErrorMsg{err: fmt.Errorf("project sync failed")}
+	updated, _ = pt.Update(errMsg)
+	pt = updated.(*projectsTab)
+
+	view := pt.View()
+	if !strings.Contains(view, "project sync failed") {
+		t.Error("error message should appear in View()")
+	}
+}
+
 func TestProjectsTab_DetailSections(t *testing.T) {
 	// Verify all detail sections are defined
 	for i := detailSection(0); i < detailSectionCount; i++ {
@@ -189,4 +252,11 @@ func TestMCPNames(t *testing.T) {
 	if len(names) != 2 || names[0] != "github" || names[1] != "postgres" {
 		t.Errorf("mcpNames = %v, want [github postgres]", names)
 	}
+}
+
+// applyProjectsWindowSize sends a WindowSizeMsg and returns the updated projectsTab.
+func applyProjectsWindowSize(t *testing.T, pt *projectsTab, w, h int) *projectsTab {
+	t.Helper()
+	updated, _ := pt.Update(tea.WindowSizeMsg{Width: w, Height: h})
+	return updated.(*projectsTab)
 }

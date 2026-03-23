@@ -59,7 +59,7 @@ func (m *Manager) BackupBeforeSync(projectName, configPath string) error {
 
 	scope := scopeFromPath(configPath)
 	ts := m.nowFunc().UTC().Format("2006-01-02T15-04-05")
-	filename := fmt.Sprintf("%s_%s_%s.json", projectName, scope, ts)
+	filename := fmt.Sprintf("%s--%s--%s.json", projectName, scope, ts)
 	backupPath := filepath.Join(m.backupsDir, filename)
 
 	return config.AtomicWrite(backupPath, data, 0o600)
@@ -72,7 +72,7 @@ func (m *Manager) Backup(projectName, configPath string) (string, error) {
 	}
 	scope := scopeFromPath(configPath)
 	ts := m.nowFunc().UTC().Format("2006-01-02T15-04-05")
-	filename := fmt.Sprintf("%s_%s_%s.json", projectName, scope, ts)
+	filename := fmt.Sprintf("%s--%s--%s.json", projectName, scope, ts)
 	return filepath.Join(m.backupsDir, filename), nil
 }
 
@@ -144,7 +144,7 @@ func (m *Manager) Prune(maxBackups int) (int, error) {
 	// Group by project+scope
 	groups := make(map[string][]Entry)
 	for _, e := range entries {
-		key := e.Project + "_" + e.Scope
+		key := e.Project + "--" + e.Scope
 		groups[key] = append(groups[key], e)
 	}
 
@@ -165,13 +165,14 @@ func (m *Manager) Prune(maxBackups int) (int, error) {
 }
 
 // parseBackupFilename extracts project, scope, and timestamp from a backup filename.
-// Format: <project>_<scope>_<timestamp>.json
+// Format: <project>--<scope>--<timestamp>.json
+// Uses "--" as delimiter so project names containing underscores are parsed correctly.
 func parseBackupFilename(name, dir string) (Entry, bool) {
 	if !strings.HasSuffix(name, ".json") {
 		return Entry{}, false
 	}
 	base := strings.TrimSuffix(name, ".json")
-	parts := strings.SplitN(base, "_", 3)
+	parts := strings.SplitN(base, "--", 3)
 	if len(parts) != 3 {
 		return Entry{}, false
 	}

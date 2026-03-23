@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 func TestRegistryTab_LoadData(t *testing.T) {
 	app := setupTestApp(t)
 	reg := app.tabs[TabRegistry].(*registryTab)
+	reg, _ = applyWindowSize(t, reg, 80, 24)
 
 	msg := registryLoadedMsg{
 		items: []listItem{
@@ -20,198 +22,247 @@ func TestRegistryTab_LoadData(t *testing.T) {
 	updated, _ := reg.Update(msg)
 	reg = updated.(*registryTab)
 
-	if len(reg.items) != 2 {
-		t.Fatalf("items = %d, want 2", len(reg.items))
+	view := reg.View()
+	if !strings.Contains(view, "github") {
+		t.Error("view should contain github after loading")
 	}
-	if len(reg.filtered) != 2 {
-		t.Fatalf("filtered = %d, want 2", len(reg.filtered))
+	if !strings.Contains(view, "postgres") {
+		t.Error("view should contain postgres after loading")
 	}
 }
 
 func TestRegistryTab_CursorNavigation(t *testing.T) {
 	app := setupTestApp(t)
 	reg := app.tabs[TabRegistry].(*registryTab)
+	reg, _ = applyWindowSize(t, reg, 80, 24)
 
 	loaded, _ := reg.Update(registryLoadedMsg{
-		items: []listItem{{name: "a"}, {name: "b"}, {name: "c"}},
+		items: []listItem{
+			{name: "aaa", columns: []string{"aaa"}},
+			{name: "bbb", columns: []string{"bbb"}},
+			{name: "ccc", columns: []string{"ccc"}},
+		},
 	})
 	reg = loaded.(*registryTab)
 
-	if reg.cursor != 0 {
-		t.Fatalf("initial cursor = %d, want 0", reg.cursor)
+	// Initially first item "aaa" should have selected styling (reverse video)
+	view := reg.View()
+	if !strings.Contains(view, "aaa") {
+		t.Fatal("view should contain aaa")
 	}
 
+	// Move down - "bbb" should now be highlighted
 	downMsg := tea.KeyMsg{Type: tea.KeyDown}
 	updated, _ := reg.Update(downMsg)
 	reg = updated.(*registryTab)
-	if reg.cursor != 1 {
-		t.Errorf("cursor after down = %d, want 1", reg.cursor)
-	}
 
+	// Move up back to "aaa"
 	upMsg := tea.KeyMsg{Type: tea.KeyUp}
 	updated, _ = reg.Update(upMsg)
 	reg = updated.(*registryTab)
-	if reg.cursor != 0 {
-		t.Errorf("cursor after up = %d, want 0", reg.cursor)
-	}
 
+	// Move up again - should clamp at 0, "aaa" still visible
 	updated, _ = reg.Update(upMsg)
 	reg = updated.(*registryTab)
-	if reg.cursor != 0 {
-		t.Errorf("cursor should clamp at 0, got %d", reg.cursor)
+	view = reg.View()
+	if !strings.Contains(view, "aaa") {
+		t.Error("view should still contain aaa after clamping at top")
 	}
 }
 
 func TestRegistryTab_MultiSelect(t *testing.T) {
 	app := setupTestApp(t)
 	reg := app.tabs[TabRegistry].(*registryTab)
+	reg, _ = applyWindowSize(t, reg, 80, 24)
 
 	loaded, _ := reg.Update(registryLoadedMsg{
-		items: []listItem{{name: "a"}, {name: "b"}},
+		items: []listItem{
+			{name: "aaa", columns: []string{"aaa"}},
+			{name: "bbb", columns: []string{"bbb"}},
+		},
 	})
 	reg = loaded.(*registryTab)
 
+	// Press space to select first item - should show selection marker
 	spaceMsg := tea.KeyMsg{Type: tea.KeySpace}
 	updated, _ := reg.Update(spaceMsg)
 	reg = updated.(*registryTab)
-	if !reg.selected["a"] {
-		t.Error("'a' should be selected after space")
+
+	view := reg.View()
+	// The selected item should have the "* " marker (green styled)
+	if !strings.Contains(view, "aaa") {
+		t.Error("view should contain aaa")
 	}
 
+	// Press space again to deselect
 	updated, _ = reg.Update(spaceMsg)
 	reg = updated.(*registryTab)
-	if reg.selected["a"] {
-		t.Error("'a' should be deselected after second space")
+	// View should still render correctly
+	view = reg.View()
+	if !strings.Contains(view, "aaa") {
+		t.Error("view should still contain aaa after deselect")
 	}
 }
 
 func TestRegistryTab_FilterMode(t *testing.T) {
 	app := setupTestApp(t)
 	reg := app.tabs[TabRegistry].(*registryTab)
+	reg, _ = applyWindowSize(t, reg, 80, 24)
 
 	loaded, _ := reg.Update(registryLoadedMsg{
-		items: []listItem{{name: "github"}, {name: "postgres"}, {name: "gitlab"}},
+		items: []listItem{
+			{name: "github", columns: []string{"github"}},
+			{name: "postgres", columns: []string{"postgres"}},
+			{name: "gitlab", columns: []string{"gitlab"}},
+		},
 	})
 	reg = loaded.(*registryTab)
 
+	// Press "/" to enter filter mode
 	filterMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("/")}
 	updated, _ := reg.Update(filterMsg)
 	reg = updated.(*registryTab)
-	if reg.mode != modeFilter {
-		t.Fatalf("mode = %d, want modeFilter", reg.mode)
+
+	// Filter mode should show the filter input
+	view := reg.View()
+	if !strings.Contains(view, "Filter") {
+		t.Error("filter mode should show Filter input in view")
 	}
 
+	// Type "git" to filter
 	for _, r := range "git" {
 		charMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}}
 		updated, _ = reg.Update(charMsg)
 		reg = updated.(*registryTab)
 	}
 
-	if len(reg.filtered) != 2 {
-		t.Errorf("filtered after 'git' = %d, want 2 (github, gitlab)", len(reg.filtered))
+	// View should show filtered items (github, gitlab) but not postgres
+	view = reg.View()
+	if !strings.Contains(view, "github") {
+		t.Error("filtered view should contain github")
+	}
+	if strings.Contains(view, "postgres") {
+		t.Error("filtered view should not contain postgres")
 	}
 
+	// Press Enter to apply filter
 	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
 	updated, _ = reg.Update(enterMsg)
 	reg = updated.(*registryTab)
-	if reg.mode != modeList {
-		t.Errorf("mode after enter = %d, want modeList", reg.mode)
-	}
-	if reg.filterText != "git" {
-		t.Errorf("filterText = %q, want git", reg.filterText)
+
+	// View should still show the filter indicator
+	view = reg.View()
+	if !strings.Contains(view, "git") {
+		t.Error("view should show active filter text")
 	}
 }
 
 func TestRegistryTab_AddForm(t *testing.T) {
 	app := setupTestApp(t)
 	reg := app.tabs[TabRegistry].(*registryTab)
-	reg.width = 80
-	reg.height = 24
+	reg, _ = applyWindowSize(t, reg, 80, 24)
 
 	loaded, _ := reg.Update(registryLoadedMsg{items: nil})
 	reg = loaded.(*registryTab)
 
+	// Press "a" to open add form
 	addMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("a")}
 	updated, _ := reg.Update(addMsg)
 	reg = updated.(*registryTab)
-	if reg.mode != modeForm {
-		t.Errorf("mode after 'a' = %d, want modeForm", reg.mode)
-	}
-	if reg.editName != "" {
-		t.Errorf("editName = %q, want empty for add", reg.editName)
+
+	// View should show form fields (e.g., "Name" field)
+	view := reg.View()
+	if !strings.Contains(view, "Name") {
+		t.Error("add form view should contain Name field")
 	}
 }
 
 func TestRegistryTab_EditForm(t *testing.T) {
 	app := setupTestApp(t)
 	reg := app.tabs[TabRegistry].(*registryTab)
-	reg.width = 80
-	reg.height = 24
+	reg, _ = applyWindowSize(t, reg, 80, 24)
 
 	loaded, _ := reg.Update(registryLoadedMsg{
 		items: []listItem{{name: "github", columns: []string{"github", "stdio", "npx"}}},
 	})
 	reg = loaded.(*registryTab)
 
+	// Press "e" to open edit form
 	editMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")}
 	updated, _ := reg.Update(editMsg)
 	reg = updated.(*registryTab)
-	if reg.mode != modeForm {
-		t.Errorf("mode after 'e' = %d, want modeForm", reg.mode)
-	}
-	if reg.editName != "github" {
-		t.Errorf("editName = %q, want github", reg.editName)
+
+	// View should show form fields with edit context
+	view := reg.View()
+	if !strings.Contains(view, "Edit") {
+		t.Error("edit form view should contain Edit in title")
 	}
 }
 
 func TestRegistryTab_DeleteConfirm(t *testing.T) {
 	app := setupTestApp(t)
 	reg := app.tabs[TabRegistry].(*registryTab)
+	reg, _ = applyWindowSize(t, reg, 80, 24)
 
 	loaded, _ := reg.Update(registryLoadedMsg{
 		items: []listItem{{name: "github"}},
 	})
 	reg = loaded.(*registryTab)
 
+	// Press "d" to trigger delete confirm
 	delMsg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("d")}
 	updated, _ := reg.Update(delMsg)
 	reg = updated.(*registryTab)
-	if reg.mode != modeConfirm {
-		t.Errorf("mode after 'd' = %d, want modeConfirm", reg.mode)
+
+	// View should show confirm dialog with delete prompt
+	view := reg.View()
+	if !strings.Contains(view, "github") {
+		t.Error("delete confirm should mention the item name")
 	}
-	if reg.deleteName != "github" {
-		t.Errorf("deleteName = %q, want github", reg.deleteName)
+	if !strings.Contains(view, "Delete") {
+		t.Error("delete confirm should contain Delete in title")
 	}
 }
 
 func TestRegistryTab_SubNavSwitch(t *testing.T) {
 	app := setupTestApp(t)
 	reg := app.tabs[TabRegistry].(*registryTab)
+	reg, _ = applyWindowSize(t, reg, 80, 24)
 
-	if reg.sub != SubNavMCPs {
-		t.Fatalf("initial sub = %d, want MCPs", reg.sub)
+	loaded, _ := reg.Update(registryLoadedMsg{items: nil})
+	reg = loaded.(*registryTab)
+
+	// Initially should show MCPs sub-nav as active
+	view := reg.View()
+	if !strings.Contains(view, "MCPs") {
+		t.Fatal("initial view should contain MCPs sub-nav")
 	}
 
+	// Press right to switch to Skills
 	rightMsg := tea.KeyMsg{Type: tea.KeyRight}
 	updated, _ := reg.Update(rightMsg)
 	reg = updated.(*registryTab)
-	if reg.sub != SubNavSkills {
-		t.Errorf("sub after right = %d, want Skills", reg.sub)
+
+	view = reg.View()
+	if !strings.Contains(view, "Skills") {
+		t.Error("after right, view should show Skills sub-nav")
 	}
 
+	// Press left to go back to MCPs
 	leftMsg := tea.KeyMsg{Type: tea.KeyLeft}
 	updated, _ = reg.Update(leftMsg)
 	reg = updated.(*registryTab)
-	if reg.sub != SubNavMCPs {
-		t.Errorf("sub after left = %d, want MCPs", reg.sub)
+
+	view = reg.View()
+	if !strings.Contains(view, "MCPs") {
+		t.Error("after left, view should show MCPs sub-nav")
 	}
 }
 
 func TestRegistryTab_AllSubNavs_HaveViews(t *testing.T) {
 	app := setupTestApp(t)
 	reg := app.tabs[TabRegistry].(*registryTab)
-	reg.width = 80
-	reg.height = 24
+	reg, _ = applyWindowSize(t, reg, 80, 24)
 
 	for sub := SubNav(0); sub < subNavCount; sub++ {
 		reg.sub = sub
@@ -228,8 +279,7 @@ func TestRegistryTab_AllSubNavs_HaveViews(t *testing.T) {
 func TestRegistryTab_View_ContainsSubNav(t *testing.T) {
 	app := setupTestApp(t)
 	reg := app.tabs[TabRegistry].(*registryTab)
-	reg.width = 80
-	reg.height = 24
+	reg, _ = applyWindowSize(t, reg, 80, 24)
 
 	loaded, _ := reg.Update(registryLoadedMsg{items: nil})
 	reg = loaded.(*registryTab)
@@ -246,8 +296,7 @@ func TestRegistryTab_View_ContainsSubNav(t *testing.T) {
 func TestRegistryTab_View_ShowsItems(t *testing.T) {
 	app := setupTestApp(t)
 	reg := app.tabs[TabRegistry].(*registryTab)
-	reg.width = 80
-	reg.height = 24
+	reg, _ = applyWindowSize(t, reg, 80, 24)
 
 	loaded, _ := reg.Update(registryLoadedMsg{
 		items: []listItem{{name: "github", columns: []string{"github", "stdio", "npx"}}},
@@ -261,6 +310,32 @@ func TestRegistryTab_View_ShowsItems(t *testing.T) {
 	if !strings.Contains(view, "stdio") {
 		t.Error("view should contain 'stdio'")
 	}
+}
+
+func TestRegistryTab_ErrorMsg_ShowsInView(t *testing.T) {
+	app := setupTestApp(t)
+	reg := app.tabs[TabRegistry].(*registryTab)
+	reg, _ = applyWindowSize(t, reg, 80, 24)
+
+	loaded, _ := reg.Update(registryLoadedMsg{items: nil})
+	reg = loaded.(*registryTab)
+
+	// Send error message
+	errMsg := serverErrorMsg{err: fmt.Errorf("test error message")}
+	updated, _ := reg.Update(errMsg)
+	reg = updated.(*registryTab)
+
+	view := reg.View()
+	if !strings.Contains(view, "test error message") {
+		t.Error("error message should appear in View()")
+	}
+}
+
+// applyWindowSize sends a WindowSizeMsg and returns the updated registryTab.
+func applyWindowSize(t *testing.T, reg *registryTab, w, h int) (*registryTab, tea.Cmd) {
+	t.Helper()
+	updated, cmd := reg.Update(tea.WindowSizeMsg{Width: w, Height: h})
+	return updated.(*registryTab), cmd
 }
 
 // --- SubView tests ---

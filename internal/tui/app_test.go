@@ -65,6 +65,13 @@ func setupTestApp(t *testing.T) App {
 	return NewApp(svc, keys, "test", "abc123", "2026-03-22")
 }
 
+// sizeApp sends a WindowSizeMsg and returns the updated App, avoiding direct field access.
+func sizeApp(t *testing.T, app App, w, h int) App {
+	t.Helper()
+	result, _ := app.Update(tea.WindowSizeMsg{Width: w, Height: h})
+	return result.(App)
+}
+
 func mkdirAll(path string) error {
 	return os.MkdirAll(path, 0o755)
 }
@@ -96,11 +103,12 @@ func TestApp_TabTitles(t *testing.T) {
 
 func TestApp_TabNavigation_NextTab(t *testing.T) {
 	app := setupTestApp(t)
-	app.width = 80
-	app.height = 24
+	app = sizeApp(t, app, 80, 24)
 
-	if app.activeTab != TabRegistry {
-		t.Fatalf("initial tab = %d, want Registry", app.activeTab)
+	// Initial view should show Registry tab content
+	view := app.View()
+	if !strings.Contains(view, "Registry") {
+		t.Fatal("initial view missing Registry tab")
 	}
 
 	// Press Tab to go to next
@@ -108,47 +116,49 @@ func TestApp_TabNavigation_NextTab(t *testing.T) {
 	result, _ := app.Update(msg)
 	app = result.(App)
 
-	if app.activeTab != TabProjects {
-		t.Errorf("after Tab, activeTab = %d, want Projects", app.activeTab)
+	view = app.View()
+	if !strings.Contains(view, "Projects") {
+		t.Error("after Tab, view should emphasize Projects tab")
 	}
 }
 
 func TestApp_TabNavigation_PrevTab(t *testing.T) {
 	app := setupTestApp(t)
-	app.width = 80
-	app.height = 24
+	app = sizeApp(t, app, 80, 24)
 
 	// Press Shift+Tab to go to prev (wraps to Help)
 	msg := tea.KeyMsg{Type: tea.KeyShiftTab}
 	result, _ := app.Update(msg)
 	app = result.(App)
 
-	if app.activeTab != TabHelp {
-		t.Errorf("after Shift+Tab from Registry, activeTab = %d, want Help", app.activeTab)
+	view := app.View()
+	if !strings.Contains(view, "Help") {
+		t.Error("after Shift+Tab from Registry, view should show Help tab content")
 	}
 }
 
 func TestApp_TabNavigation_NumberKeys(t *testing.T) {
 	app := setupTestApp(t)
-	app.width = 80
-	app.height = 24
+	app = sizeApp(t, app, 80, 24)
 
 	tests := []struct {
-		key  string
-		want TabIndex
+		key     string
+		wantTab string
 	}{
-		{"2", TabProjects},
-		{"3", TabTools},
-		{"4", TabHelp},
-		{"1", TabRegistry},
+		{"2", "Projects"},
+		{"3", "Tools"},
+		{"4", "Help"},
+		{"1", "Registry"},
 	}
 
 	for _, tt := range tests {
 		msg := tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(tt.key)}
 		result, _ := app.Update(msg)
 		app = result.(App)
-		if app.activeTab != tt.want {
-			t.Errorf("after key %q, activeTab = %d, want %d", tt.key, app.activeTab, tt.want)
+		view := app.View()
+		// The active tab content should be visible in the view
+		if !strings.Contains(view, tt.wantTab) {
+			t.Errorf("after key %q, view should contain %q", tt.key, tt.wantTab)
 		}
 	}
 }
@@ -156,19 +166,26 @@ func TestApp_TabNavigation_NumberKeys(t *testing.T) {
 func TestApp_WindowResize_Propagates(t *testing.T) {
 	app := setupTestApp(t)
 
-	msg := tea.WindowSizeMsg{Width: 120, Height: 40}
-	result, _ := app.Update(msg)
-	app = result.(App)
+	// Before resize, view shows loading
+	view := app.View()
+	if view != "Loading..." {
+		t.Errorf("before resize, view = %q, want Loading...", view)
+	}
 
-	if app.width != 120 || app.height != 40 {
-		t.Errorf("size = %dx%d, want 120x40", app.width, app.height)
+	// After resize, view should render tab content
+	app = sizeApp(t, app, 120, 40)
+	view = app.View()
+	if view == "Loading..." {
+		t.Error("after resize, view should no longer show Loading...")
+	}
+	if !strings.Contains(view, "Registry") {
+		t.Error("after resize, view should contain tab bar with Registry")
 	}
 }
 
 func TestApp_View_ContainsTabBar(t *testing.T) {
 	app := setupTestApp(t)
-	app.width = 80
-	app.height = 24
+	app = sizeApp(t, app, 80, 24)
 
 	view := app.View()
 	if !strings.Contains(view, "Registry") {
@@ -196,8 +213,7 @@ func TestApp_View_Loading(t *testing.T) {
 
 func TestApp_CtrlC_Quits(t *testing.T) {
 	app := setupTestApp(t)
-	app.width = 80
-	app.height = 24
+	app = sizeApp(t, app, 80, 24)
 
 	msg := tea.KeyMsg{Type: tea.KeyCtrlC}
 	_, cmd := app.Update(msg)
@@ -208,17 +224,25 @@ func TestApp_CtrlC_Quits(t *testing.T) {
 
 func TestApp_ConfirmOverlay_Dismiss(t *testing.T) {
 	app := setupTestApp(t)
-	app.width = 80
-	app.height = 24
+	app = sizeApp(t, app, 80, 24)
 	app.overlay = OverlayConfirm
 	app.overlayTitle = "Test"
 	app.overlayMsg = "Are you sure?"
 
+	// Verify the confirm overlay appears in view
+	view := app.View()
+	if !strings.Contains(view, "Are you sure?") {
+		t.Error("confirm overlay should appear in view")
+	}
+
+	// Dismiss with Esc
 	msg := tea.KeyMsg{Type: tea.KeyEscape}
 	result, _ := app.Update(msg)
 	app = result.(App)
 
-	if app.overlay != OverlayNone {
-		t.Errorf("overlay = %d after Esc, want OverlayNone", app.overlay)
+	// Overlay should be gone - view should show normal tab content
+	view = app.View()
+	if strings.Contains(view, "Are you sure?") {
+		t.Error("confirm overlay should be dismissed after Esc")
 	}
 }

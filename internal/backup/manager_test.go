@@ -28,7 +28,7 @@ func TestManager_BackupBeforeSync(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	expectedName := "myproject_mcp_2026-03-22T10-30-00.json"
+	expectedName := "myproject--mcp--2026-03-22T10-30-00.json"
 	backupPath := filepath.Join(backupsDir, expectedName)
 	data, err := os.ReadFile(backupPath)
 	if err != nil {
@@ -86,8 +86,43 @@ func TestManager_BackupBeforeSync_SettingsScope(t *testing.T) {
 	if len(entries) != 1 {
 		t.Fatalf("expected 1 backup file, got %d", len(entries))
 	}
-	if !strings.Contains(entries[0].Name(), "_settings_") {
+	if !strings.Contains(entries[0].Name(), "--settings--") {
 		t.Errorf("expected settings scope in filename, got: %s", entries[0].Name())
+	}
+}
+
+func TestManager_BackupBeforeSync_UnderscoredProjectName(t *testing.T) {
+	tmp := t.TempDir()
+	backupsDir := filepath.Join(tmp, "backups")
+	configPath := filepath.Join(tmp, ".mcp.json")
+
+	if err := os.WriteFile(configPath, []byte(`{}`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fixedTime := time.Date(2026, 3, 22, 10, 30, 0, 0, time.UTC)
+	mgr := &Manager{
+		backupsDir: backupsDir,
+		nowFunc:    func() time.Time { return fixedTime },
+	}
+
+	if err := mgr.BackupBeforeSync("my_cool_project", configPath); err != nil {
+		t.Fatal(err)
+	}
+
+	// Verify filename parses correctly
+	entries, err := mgr.List("my_cool_project")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("entries = %d, want 1", len(entries))
+	}
+	if entries[0].Project != "my_cool_project" {
+		t.Errorf("project = %q, want my_cool_project", entries[0].Project)
+	}
+	if entries[0].Scope != "mcp" {
+		t.Errorf("scope = %q, want mcp", entries[0].Scope)
 	}
 }
 
@@ -318,10 +353,12 @@ func TestParseBackupFilename(t *testing.T) {
 		project string
 		scope   string
 	}{
-		{"myproject_mcp_2026-03-22T10-30-00.json", true, "myproject", "mcp"},
-		{"proj_settings_2026-01-01T00-00-00.json", true, "proj", "settings"},
+		{"myproject--mcp--2026-03-22T10-30-00.json", true, "myproject", "mcp"},
+		{"proj--settings--2026-01-01T00-00-00.json", true, "proj", "settings"},
+		{"my_cool_project--mcp--2026-03-22T10-30-00.json", true, "my_cool_project", "mcp"},
 		{"invalid.json", false, "", ""},
 		{"not-json.txt", false, "", ""},
+		{"only--two.json", false, "", ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

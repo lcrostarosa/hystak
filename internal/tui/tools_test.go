@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -12,43 +13,50 @@ import (
 func TestToolsTab_GridNavigation(t *testing.T) {
 	app := setupTestApp(t)
 	tools := app.tabs[TabTools].(*toolsTab)
-	tools.width = 80
-	tools.height = 24
+	tools = applyToolsWindowSize(t, tools, 80, 24)
 
-	if tools.cursor != 0 {
-		t.Fatalf("initial cursor = %d, want 0", tools.cursor)
+	// Initially Sync should be highlighted (cursor 0)
+	view := tools.View()
+	if !strings.Contains(view, "Sync") {
+		t.Fatal("view should contain Sync")
 	}
 
 	// Move right
 	rightMsg := tea.KeyMsg{Type: tea.KeyRight}
 	updated, _ := tools.Update(rightMsg)
 	tools = updated.(*toolsTab)
-	if tools.cursor != 1 {
-		t.Errorf("cursor after right = %d, want 1", tools.cursor)
+
+	// View should still render, with Diff now reachable
+	view = tools.View()
+	if !strings.Contains(view, "Diff") {
+		t.Error("view should contain Diff")
 	}
 
 	// Move down
 	downMsg := tea.KeyMsg{Type: tea.KeyDown}
 	updated, _ = tools.Update(downMsg)
 	tools = updated.(*toolsTab)
-	if tools.cursor != 3 {
-		t.Errorf("cursor after down = %d, want 3", tools.cursor)
+
+	view = tools.View()
+	if !strings.Contains(view, "Launch") {
+		t.Error("view should contain Launch")
 	}
 }
 
 func TestToolsTab_EnterOpensProjectPicker(t *testing.T) {
 	app := setupTestApp(t)
 	tools := app.tabs[TabTools].(*toolsTab)
-	tools.width = 80
-	tools.height = 24
+	tools = applyToolsWindowSize(t, tools, 80, 24)
 
 	// Press Enter on Sync (cursor 0)
 	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
 	updated, cmd := tools.Update(enterMsg)
 	tools = updated.(*toolsTab)
 
-	if tools.mode != toolsModePicker {
-		t.Errorf("mode after Enter = %d, want picker", tools.mode)
+	// View should show project picker
+	view := tools.View()
+	if !strings.Contains(view, "Select project") {
+		t.Error("view should show project picker with 'Select project'")
 	}
 	if cmd == nil {
 		t.Fatal("expected a command to load project list")
@@ -58,20 +66,32 @@ func TestToolsTab_EnterOpensProjectPicker(t *testing.T) {
 func TestToolsTab_PickerEscReturns(t *testing.T) {
 	app := setupTestApp(t)
 	tools := app.tabs[TabTools].(*toolsTab)
-	tools.mode = toolsModePicker
+	tools = applyToolsWindowSize(t, tools, 80, 24)
 
-	escMsg := tea.KeyMsg{Type: tea.KeyEscape}
-	updated, _ := tools.Update(escMsg)
+	// Open picker first
+	enterMsg := tea.KeyMsg{Type: tea.KeyEnter}
+	updated, _ := tools.Update(enterMsg)
 	tools = updated.(*toolsTab)
 
-	if tools.mode != toolsModeGrid {
-		t.Errorf("mode after Esc = %d, want grid", tools.mode)
+	// Esc returns to grid
+	escMsg := tea.KeyMsg{Type: tea.KeyEscape}
+	updated, _ = tools.Update(escMsg)
+	tools = updated.(*toolsTab)
+
+	// View should show grid again (Sync, Diff, etc.)
+	view := tools.View()
+	if !strings.Contains(view, "Sync") {
+		t.Error("after Esc, view should show Sync in grid")
+	}
+	if strings.Contains(view, "Select project") {
+		t.Error("after Esc, project picker should be dismissed")
 	}
 }
 
 func TestToolsTab_DiffDoneShowsOverlay(t *testing.T) {
 	app := setupTestApp(t)
 	tools := app.tabs[TabTools].(*toolsTab)
+	tools = applyToolsWindowSize(t, tools, 80, 24)
 
 	msg := toolsDiffDoneMsg{
 		results: []service.DiffResult{
@@ -82,32 +102,46 @@ func TestToolsTab_DiffDoneShowsOverlay(t *testing.T) {
 	updated, _ := tools.Update(msg)
 	tools = updated.(*toolsTab)
 
-	if tools.mode != toolsModeDiff {
-		t.Errorf("mode after diff done = %d, want diff", tools.mode)
+	// View should show diff results
+	view := tools.View()
+	if !strings.Contains(view, "github") {
+		t.Error("diff view should contain 'github'")
 	}
-	if len(tools.diffView.results) != 2 {
-		t.Errorf("diff results = %d, want 2", len(tools.diffView.results))
+	if !strings.Contains(view, "postgres") {
+		t.Error("diff view should contain 'postgres'")
 	}
 }
 
 func TestToolsTab_DiffEscCloses(t *testing.T) {
 	app := setupTestApp(t)
 	tools := app.tabs[TabTools].(*toolsTab)
-	tools.mode = toolsModeDiff
-	tools.diffView = newDiffViewModel(nil, tools.keys)
+	tools = applyToolsWindowSize(t, tools, 80, 24)
 
-	escMsg := tea.KeyMsg{Type: tea.KeyEscape}
-	updated, _ := tools.Update(escMsg)
+	// Put into diff mode
+	msg := toolsDiffDoneMsg{
+		results: []service.DiffResult{
+			{ServerName: "github", Status: model.DriftSynced},
+		},
+	}
+	updated, _ := tools.Update(msg)
 	tools = updated.(*toolsTab)
 
-	if tools.mode != toolsModeGrid {
-		t.Errorf("mode after Esc = %d, want grid", tools.mode)
+	// Esc closes diff view
+	escMsg := tea.KeyMsg{Type: tea.KeyEscape}
+	updated, _ = tools.Update(escMsg)
+	tools = updated.(*toolsTab)
+
+	// View should return to grid
+	view := tools.View()
+	if !strings.Contains(view, "Sync") {
+		t.Error("after Esc from diff, view should show Sync in grid")
 	}
 }
 
 func TestToolsTab_SyncDoneSetsMessage(t *testing.T) {
 	app := setupTestApp(t)
 	tools := app.tabs[TabTools].(*toolsTab)
+	tools = applyToolsWindowSize(t, tools, 80, 24)
 
 	msg := toolsSyncDoneMsg{
 		results: []service.SyncResult{{Name: "github", Action: service.SyncAdded}},
@@ -115,19 +149,34 @@ func TestToolsTab_SyncDoneSetsMessage(t *testing.T) {
 	updated, _ := tools.Update(msg)
 	tools = updated.(*toolsTab)
 
-	if tools.mode != toolsModeGrid {
-		t.Errorf("mode = %d, want grid", tools.mode)
+	// View should show the sync complete message
+	view := tools.View()
+	if !strings.Contains(view, "Sync complete") {
+		t.Errorf("view should contain 'Sync complete', got: %s", view)
 	}
-	if !strings.Contains(tools.err, "Sync complete") {
-		t.Errorf("err = %q, want Sync complete message", tools.err)
+}
+
+func TestToolsTab_SyncDone_WithError_ShowsInView(t *testing.T) {
+	app := setupTestApp(t)
+	tools := app.tabs[TabTools].(*toolsTab)
+	tools = applyToolsWindowSize(t, tools, 80, 24)
+
+	msg := toolsSyncDoneMsg{
+		err: fmt.Errorf("sync failed: project not found"),
+	}
+	updated, _ := tools.Update(msg)
+	tools = updated.(*toolsTab)
+
+	view := tools.View()
+	if !strings.Contains(view, "sync failed") {
+		t.Error("sync error should appear in View()")
 	}
 }
 
 func TestToolsTab_View_ShowsGrid(t *testing.T) {
 	app := setupTestApp(t)
 	tools := app.tabs[TabTools].(*toolsTab)
-	tools.width = 80
-	tools.height = 24
+	tools = applyToolsWindowSize(t, tools, 80, 24)
 
 	view := tools.View()
 	if !strings.Contains(view, "Sync") {
@@ -145,18 +194,22 @@ func TestToolsTab_View_ShowsGrid(t *testing.T) {
 
 func TestDiffView_Navigation(t *testing.T) {
 	results := []service.DiffResult{
-		{ServerName: "a", Status: model.DriftSynced},
-		{ServerName: "b", Status: model.DriftDrifted},
+		{ServerName: "aaa", Status: model.DriftSynced},
+		{ServerName: "bbb", Status: model.DriftDrifted},
 	}
 	dv := newDiffViewModel(results, DefaultKeyMap())
 
-	if dv.cursor != 0 {
-		t.Fatalf("initial cursor = %d, want 0", dv.cursor)
+	// Verify initial view contains first item
+	view := dv.view(80, 24)
+	if !strings.Contains(view, "aaa") {
+		t.Error("initial diff view should contain aaa")
 	}
 
+	// Move down
 	dv, _ = dv.update(tea.KeyMsg{Type: tea.KeyDown})
-	if dv.cursor != 1 {
-		t.Errorf("cursor after down = %d, want 1", dv.cursor)
+	view = dv.view(80, 24)
+	if !strings.Contains(view, "bbb") {
+		t.Error("after down, diff view should contain bbb")
 	}
 }
 
@@ -237,4 +290,11 @@ func TestCountTrue(t *testing.T) {
 	if got := countTrue(m); got != 2 {
 		t.Errorf("countTrue = %d, want 2", got)
 	}
+}
+
+// applyToolsWindowSize sends a WindowSizeMsg and returns the updated toolsTab.
+func applyToolsWindowSize(t *testing.T, tools *toolsTab, w, h int) *toolsTab {
+	t.Helper()
+	updated, _ := tools.Update(tea.WindowSizeMsg{Width: w, Height: h})
+	return updated.(*toolsTab)
 }

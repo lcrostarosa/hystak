@@ -102,7 +102,7 @@ func TestClaudeMDDeployer_Sync_RemoveManaged(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Sync with empty config — should remove managed file
+	// Sync with empty config -- should remove managed file
 	if err := d.Sync(projDir, DeployConfig{}); err != nil {
 		t.Fatal(err)
 	}
@@ -189,5 +189,138 @@ func TestClaudeMDDeployer_Preflight_NoConflict_Symlink(t *testing.T) {
 	conflicts := d.Preflight(projDir, DeployConfig{TemplateSource: "/tmpl"})
 	if len(conflicts) != 0 {
 		t.Errorf("symlink should not be a conflict, got %d", len(conflicts))
+	}
+}
+
+func TestClaudeMDDeployer_ReadDeployed(t *testing.T) {
+	tests := []struct {
+		name         string
+		setup        func(t *testing.T, projDir string)
+		wantTemplate string
+		wantEmpty    bool
+	}{
+		{
+			name: "symlink returns TemplateSource",
+			setup: func(t *testing.T, projDir string) {
+				t.Helper()
+				target := filepath.Join(t.TempDir(), "template.md")
+				if err := os.WriteFile(target, []byte("# Template"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+				if err := os.Symlink(target, filepath.Join(projDir, "CLAUDE.md")); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantTemplate: "", // will be a real path, just check non-empty
+			wantEmpty:    false,
+		},
+		{
+			name: "composed file with sentinel",
+			setup: func(t *testing.T, projDir string) {
+				t.Helper()
+				content := managedSentinel + "\n\n# Template\n"
+				if err := os.WriteFile(filepath.Join(projDir, "CLAUDE.md"), []byte(content), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantTemplate: "(composed)",
+			wantEmpty:    false,
+		},
+		{
+			name: "user-owned file",
+			setup: func(t *testing.T, projDir string) {
+				t.Helper()
+				if err := os.WriteFile(filepath.Join(projDir, "CLAUDE.md"), []byte("# User content"), 0o644); err != nil {
+					t.Fatal(err)
+				}
+			},
+			wantTemplate: "",
+			wantEmpty:    true,
+		},
+		{
+			name:         "no file",
+			setup:        func(t *testing.T, projDir string) { t.Helper() },
+			wantTemplate: "",
+			wantEmpty:    true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tmp := t.TempDir()
+			projDir := filepath.Join(tmp, "project")
+			if err := os.MkdirAll(projDir, 0o755); err != nil {
+				t.Fatal(err)
+			}
+			tt.setup(t, projDir)
+
+			d := &ClaudeMDDeployer{}
+			deployed, err := d.ReadDeployed(projDir)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if tt.wantEmpty {
+				if deployed.TemplateSource != "" {
+					t.Errorf("TemplateSource = %q, want empty", deployed.TemplateSource)
+				}
+			} else {
+				if deployed.TemplateSource == "" {
+					t.Error("TemplateSource should not be empty")
+				}
+				if tt.wantTemplate != "" && deployed.TemplateSource != tt.wantTemplate {
+					t.Errorf("TemplateSource = %q, want %q", deployed.TemplateSource, tt.wantTemplate)
+				}
+			}
+		})
+	}
+}
+
+func TestClaudeMDDeployer_Sync_SymlinkIdempotent(t *testing.T) {
+	tmp := t.TempDir()
+	d := &ClaudeMDDeployer{}
+	projDir := filepath.Join(tmp, "project")
+	if err := os.MkdirAll(projDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	tmplPath := filepath.Join(tmp, "template.md")
+	if err := os.WriteFile(tmplPath, []byte("# Template"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cfg := DeployConfig{TemplateSource: tmplPath}
+
+	// First sync
+	if err := d.Sync(projDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	path := filepath.Join(projDir, "CLAUDE.md")
+	info1, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Second sync with same config
+	if err := d.Sync(projDir, cfg); err != nil {
+		t.Fatal(err)
+	}
+	info2, err := os.Lstat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Note: ClaudeMDDeployer always removes and recreates symlinks,
+	// so SameFile may differ. This test documents the current behavior.
+	// If we want idempotency, the deployer should check target first.
+	_ = info1
+	_ = info2
+	// Verify symlink still points to the right target
+	target, err := os.Readlink(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target != tmplPath {
+		t.Errorf("symlink target = %q, want %q after re-sync", target, tmplPath)
 	}
 }
