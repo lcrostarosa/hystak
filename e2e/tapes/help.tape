@@ -2,7 +2,7 @@ Output e2e/actual/help.gif
 
 Set Shell "bash"
 Set Width 120
-Set Height 30
+Set Height 120
 
 Type "hystak --help"
 Enter

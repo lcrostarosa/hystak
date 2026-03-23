@@ -4,18 +4,19 @@ Set Shell "bash"
 Set Width 120
 Set Height 120
 
-Type "export HYSTAK_CONFIG_DIR=$(mktemp -d)"
+# Use a fixed path to avoid $ expansion issues in VHS Type commands
+Type "export HYSTAK_CONFIG_DIR=/tmp/hystak-e2e-test"
 Enter
-Type "export PROJECT_DIR=$(mktemp -d)"
+Type "export PROJECT_DIR=/tmp/hystak-e2e-project"
 Enter
 Sleep 500ms
 
-Type "mkdir -p $HYSTAK_CONFIG_DIR/profiles $PROJECT_DIR/.git"
+Type "mkdir -p /tmp/hystak-e2e-test/profiles /tmp/hystak-e2e-project/.git"
 Enter
 Sleep 500ms
 
 # Create minimal registry
-Type "cat > $HYSTAK_CONFIG_DIR/registry.yaml << 'EOF'"
+Type "cat > /tmp/hystak-e2e-test/registry.yaml << 'EOF'"
 Enter
 Type "mcps:"
 Enter
@@ -42,12 +43,24 @@ Enter
 Sleep 500ms
 
 # Create project
-Type "printf 'projects:\n  myproject:\n    path: '\"$PROJECT_DIR\"'\n    active_profile: dev\n    managed_mcps: []\n' > $HYSTAK_CONFIG_DIR/projects.yaml"
+Type "cat > /tmp/hystak-e2e-test/projects.yaml << 'EOF'"
+Enter
+Type "projects:"
+Enter
+Type "  myproject:"
+Enter
+Type "    path: /tmp/hystak-e2e-project"
+Enter
+Type "    active_profile: dev"
+Enter
+Type "    managed_mcps: []"
+Enter
+Type "EOF"
 Enter
 Sleep 500ms
 
 # Create profile
-Type "cat > $HYSTAK_CONFIG_DIR/profiles/dev.yaml << 'EOF'"
+Type "cat > /tmp/hystak-e2e-test/profiles/dev.yaml << 'EOF'"
 Enter
 Type "name: dev"
 Enter
@@ -63,7 +76,7 @@ Type "hystak sync myproject"
 Enter
 Sleep 1s
 
-Type "cat $PROJECT_DIR/.mcp.json"
+Type "cat /tmp/hystak-e2e-project/.mcp.json"
 Enter
 Sleep 1s
 
@@ -71,6 +84,6 @@ Type "hystak diff myproject"
 Enter
 Sleep 1s
 
-Type "rm -rf $HYSTAK_CONFIG_DIR $PROJECT_DIR"
+Type "rm -rf /tmp/hystak-e2e-test /tmp/hystak-e2e-project"
 Enter
 Sleep 500ms
