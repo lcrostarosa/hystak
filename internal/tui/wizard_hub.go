@@ -444,14 +444,14 @@ func (h wizardHubModel) viewContent() string {
 			b.WriteString("\n")
 		}
 	case hubReview:
-		b.WriteString(fmt.Sprintf("MCPs:        %d\n", countTrue(h.selectedMCP)))
-		b.WriteString(fmt.Sprintf("Skills:      %d\n", countTrue(h.selectedSkill)))
-		b.WriteString(fmt.Sprintf("Permissions: %d\n", countTrue(h.selectedPerm)))
-		b.WriteString(fmt.Sprintf("Hooks:       %d\n", countTrue(h.selectedHook)))
-		b.WriteString(fmt.Sprintf("Template:    %s\n", h.selectedTmpl))
-		b.WriteString(fmt.Sprintf("Prompts:     %d\n", countTrue(h.selectedPrmpt)))
-		b.WriteString(fmt.Sprintf("Env Vars:    %d\n", len(h.envVars)))
-		b.WriteString(fmt.Sprintf("Isolation:   %s\n", h.isolation))
+		fmt.Fprintf(&b, "MCPs:        %d\n", countTrue(h.selectedMCP))
+		fmt.Fprintf(&b, "Skills:      %d\n", countTrue(h.selectedSkill))
+		fmt.Fprintf(&b, "Permissions: %d\n", countTrue(h.selectedPerm))
+		fmt.Fprintf(&b, "Hooks:       %d\n", countTrue(h.selectedHook))
+		fmt.Fprintf(&b, "Template:    %s\n", h.selectedTmpl)
+		fmt.Fprintf(&b, "Prompts:     %d\n", countTrue(h.selectedPrmpt))
+		fmt.Fprintf(&b, "Env Vars:    %d\n", len(h.envVars))
+		fmt.Fprintf(&b, "Isolation:   %s\n", h.isolation)
 		b.WriteString("\nPress Enter to save.\n")
 	}
 

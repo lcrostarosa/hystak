@@ -1,65 +1,55 @@
-# Test: hystak doctor validates registry
-# Creates a registry and runs doctor to check validity.
-
 Output e2e/actual/doctor.gif
 
 Set Shell "bash"
-Set Width 100
-Set Height 25
+Set Width 120
+Set Height 120
 
-# Create isolated config
 Type "export HYSTAK_CONFIG_DIR=$(mktemp -d)"
 Enter
 Sleep 500ms
 
-Type@50ms "mkdir -p $HYSTAK_CONFIG_DIR/profiles"
+Type "mkdir -p $HYSTAK_CONFIG_DIR/profiles"
 Enter
 Sleep 500ms
 
-# Create a clean registry
-Type@50ms "cat > $HYSTAK_CONFIG_DIR/registry.yaml << 'YAML'"
+Type "cat > $HYSTAK_CONFIG_DIR/registry.yaml << 'EOF'"
 Enter
-Type@50ms "mcps:"
+Type "mcps:"
 Enter
-Type@50ms "  github:"
+Type "  github:"
 Enter
-Type@50ms "    transport: stdio"
+Type "    transport: stdio"
 Enter
-Type@50ms "    command: npx"
+Type "    command: npx"
 Enter
-Type@50ms "    args: [\"-y\", \"@anthropic/mcp-github\"]"
+Type "skills: {}"
 Enter
-Type@50ms "skills: {}"
+Type "hooks: {}"
 Enter
-Type@50ms "hooks: {}"
+Type "permissions: {}"
 Enter
-Type@50ms "permissions: {}"
+Type "templates: {}"
 Enter
-Type@50ms "templates: {}"
+Type "prompts: {}"
 Enter
-Type@50ms "prompts: {}"
+Type "tags: {}"
 Enter
-Type@50ms "tags: {}"
-Enter
-Type@50ms "YAML"
+Type "EOF"
 Enter
 Sleep 500ms
 
-# Create empty projects
-Type@50ms "cat > $HYSTAK_CONFIG_DIR/projects.yaml << 'YAML'"
+Type "cat > $HYSTAK_CONFIG_DIR/projects.yaml << 'EOF'"
 Enter
-Type@50ms "projects: {}"
+Type "projects: {}"
 Enter
-Type@50ms "YAML"
+Type "EOF"
 Enter
 Sleep 500ms
 
-# Run doctor
 Type "hystak doctor"
 Enter
 Sleep 1s
 
-# Clean up
 Type "rm -rf $HYSTAK_CONFIG_DIR"
 Enter
 Sleep 500ms

@@ -100,7 +100,7 @@ func (t *helpTab) View() string {
 	entry("hystak version", "Show version info")
 	b.WriteString("\n")
 
-	b.WriteString(fmt.Sprintf("  Config: %s\n", "~/.hystak/"))
+	fmt.Fprintf(&b, "  Config: %s\n", "~/.hystak/")
 
 	content := b.String()
 	lines := strings.Split(content, "\n")

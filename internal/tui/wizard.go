@@ -304,10 +304,10 @@ func (w wizardModel) view(width, height int) string {
 		permCount := countTrue(w.selectedPerm)
 		hookCount := countTrue(w.selectedHook)
 
-		b.WriteString(fmt.Sprintf("  MCPs          %d\n", mcpCount))
-		b.WriteString(fmt.Sprintf("  Skills        %d\n", skillCount))
-		b.WriteString(fmt.Sprintf("  Permissions   %d\n", permCount))
-		b.WriteString(fmt.Sprintf("  Hooks         %d\n", hookCount))
+		fmt.Fprintf(&b, "  MCPs          %d\n", mcpCount)
+		fmt.Fprintf(&b, "  Skills        %d\n", skillCount)
+		fmt.Fprintf(&b, "  Permissions   %d\n", permCount)
+		fmt.Fprintf(&b, "  Hooks         %d\n", hookCount)
 		b.WriteString("\n  Ready to save profile and launch.\n")
 	}
 
