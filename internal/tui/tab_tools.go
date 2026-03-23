@@ -17,6 +17,7 @@ const (
 	toolDiff
 	toolDiscover
 	toolLaunch
+	toolImport
 	toolCount
 )
 
@@ -28,6 +29,7 @@ var toolDefs = [toolCount]struct {
 	{"Diff", "Show config drift"},
 	{"Discover", "Scan for new MCPs"},
 	{"Launch", "Sync + run Claude Code"},
+	{"Import", "Import MCPs from file"},
 }
 
 // toolsMode tracks the current state of the tools tab.
@@ -39,6 +41,7 @@ const (
 	toolsModeDiff               // showing diff results
 	toolsModeDiscover           // showing discovery results
 	toolsModeWizard             // launch wizard
+	toolsModeImport             // import overlay
 )
 
 // toolsTab is the Tools tab — action grid with overlays.
@@ -64,6 +67,9 @@ type toolsTab struct {
 
 	// Wizard
 	wizard wizardModel
+
+	// Import
+	importOverlay importModel
 }
 
 func newToolsTab(keys KeyMap, svc *service.Service) *toolsTab {
@@ -82,6 +88,8 @@ func (t *toolsTab) HelpKeys() []HelpEntry {
 		return t.discoverView.helpKeys()
 	case toolsModeWizard:
 		return t.wizard.helpKeys()
+	case toolsModeImport:
+		return t.importOverlay.helpKeys()
 	default:
 		return []HelpEntry{{"Enter", "Select"}, {"Arrow", "Navigate"}}
 	}
@@ -159,6 +167,14 @@ func (t *toolsTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		t.mode = toolsModeGrid
 		return t, nil
 
+	case importDismissMsg:
+		t.mode = toolsModeGrid
+		return t, nil
+
+	case importScanDoneMsg, importApplyDoneMsg:
+		t.importOverlay, _ = t.importOverlay.update(msg)
+		return t, nil
+
 	case tea.WindowSizeMsg:
 		t.width = msg.Width
 		t.height = msg.Height
@@ -174,6 +190,8 @@ func (t *toolsTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return t.handleDiscoverKey(msg)
 		case toolsModeWizard:
 			return t.handleWizardKey(msg)
+		case toolsModeImport:
+			return t.handleImportKey(msg)
 		default:
 			return t.handleGridKey(msg)
 		}
@@ -209,6 +227,13 @@ func (t *toolsTab) handleGridKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 }
 
 func (t *toolsTab) activateTool(action toolAction) tea.Cmd {
+	// Import doesn't need project picker — goes straight to import overlay
+	if action == toolImport {
+		t.importOverlay = newImportModel(t.keys, t.svc)
+		t.mode = toolsModeImport
+		return textinput.Blink
+	}
+
 	t.pendingAction = action
 	t.mode = toolsModePicker
 	svc := t.svc
