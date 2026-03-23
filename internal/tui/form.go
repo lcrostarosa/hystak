@@ -133,7 +133,7 @@ func (m formModel) View(width, height int) string {
 		if i == m.focus {
 			cursor = ">"
 		}
-		b.WriteString(fmt.Sprintf("  %s %-14s %s\n", cursor, label+":", f.View()))
+		fmt.Fprintf(&b, "  %s %-14s %s\n", cursor, label+":", f.View())
 	}
 
 	b.WriteString("\n")

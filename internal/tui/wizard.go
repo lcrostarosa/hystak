@@ -41,7 +41,6 @@ type wizardModel struct {
 	selectedSkill map[string]bool
 	selectedPerm  map[string]bool
 	selectedHook  map[string]bool
-	optionSection int // which section in step 2
 }
 
 func newWizardModel(keys KeyMap, svc *service.Service, projectName, profileName string) wizardModel {
@@ -160,7 +159,6 @@ func (w wizardModel) currentListLen() int {
 
 func (w wizardModel) currentOptionList() ([]string, map[string]bool) {
 	// Flatten all option sections into one list for now
-	// optionSection could be used for collapsible sections later
 	all := make([]string, 0, len(w.allSkills)+len(w.allPerms)+len(w.allHooks))
 	all = append(all, w.allSkills...)
 	all = append(all, w.allPerms...)

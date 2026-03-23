@@ -28,9 +28,9 @@ func (m discoveryModel) view(width, height int) string {
 	if len(m.candidates) == 0 {
 		b.WriteString("  No new MCP servers found.\n")
 	} else {
-		b.WriteString(fmt.Sprintf("  Found %d server(s), imported %d:\n\n", len(m.candidates), m.imported))
+		fmt.Fprintf(&b, "  Found %d server(s), imported %d:\n\n", len(m.candidates), m.imported)
 		for _, c := range m.candidates {
-			b.WriteString(fmt.Sprintf("  %s (%s) from %s\n", c.Name, c.Server.Transport, truncate(c.Source, 40)))
+			fmt.Fprintf(&b, "  %s (%s) from %s\n", c.Name, c.Server.Transport, truncate(c.Source, 40))
 		}
 	}
 

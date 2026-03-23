@@ -32,7 +32,9 @@ func runFirstRunFlow(cmd *cobra.Command) error {
 		return fmt.Errorf("saving keybinding config: %w", err)
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Saved keybinding profile: %s\n\n", profile)
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Saved keybinding profile: %s\n\n", profile); err != nil {
+		return err
+	}
 
 	// S-003: Scan existing configs
 	cwd, err := os.Getwd()
@@ -42,24 +44,36 @@ func runFirstRunFlow(cmd *cobra.Command) error {
 
 	candidates, err := discovery.ScanAll(cwd)
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "Warning: scanning configs: %v\n", err)
+		if _, wErr := fmt.Fprintf(cmd.ErrOrStderr(), "Warning: scanning configs: %v\n", err); wErr != nil {
+			return wErr
+		}
 		return nil
 	}
 
 	if len(candidates) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No existing MCP servers found.")
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "No existing MCP servers found."); err != nil {
+			return err
+		}
 		return nil
 	}
 
 	// Show discovered servers
-	fmt.Fprintf(cmd.OutOrStdout(), "Found %d MCP server(s):\n", len(candidates))
-	for _, c := range candidates {
-		fmt.Fprintf(cmd.OutOrStdout(), "  [*] %s (%s) from %s\n", c.Name, c.Server.Transport, c.Source)
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Found %d MCP server(s):\n", len(candidates)); err != nil {
+		return err
 	}
-	fmt.Fprintln(cmd.OutOrStdout())
+	for _, c := range candidates {
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  [*] %s (%s) from %s\n", c.Name, c.Server.Transport, c.Source); err != nil {
+			return err
+		}
+	}
+	if _, err := fmt.Fprintln(cmd.OutOrStdout()); err != nil {
+		return err
+	}
 
 	// Confirm import
-	fmt.Fprint(cmd.OutOrStdout(), "Import these servers into registry? [Y]es / [N]o: ")
+	if _, err := fmt.Fprint(cmd.OutOrStdout(), "Import these servers into registry? [Y]es / [N]o: "); err != nil {
+		return err
+	}
 	reader := bufio.NewReader(cmd.InOrStdin())
 	input, err := reader.ReadString('\n')
 	if err != nil {
@@ -68,7 +82,9 @@ func runFirstRunFlow(cmd *cobra.Command) error {
 
 	choice := strings.TrimSpace(strings.ToLower(input))
 	if choice != "y" && choice != "yes" && choice != "" {
-		fmt.Fprintln(cmd.OutOrStdout(), "Skipped import.")
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Skipped import."); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -81,11 +97,15 @@ func runFirstRunFlow(cmd *cobra.Command) error {
 	imported := 0
 	for _, c := range candidates {
 		if _, exists := reg.Servers.Get(c.Name); exists {
-			fmt.Fprintf(cmd.OutOrStdout(), "  Skipped %q (already in registry)\n", c.Name)
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  Skipped %q (already in registry)\n", c.Name); err != nil {
+				return err
+			}
 			continue
 		}
 		if err := reg.Servers.Add(c.Server); err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "  Warning: adding %q: %v\n", c.Name, err)
+			if _, wErr := fmt.Fprintf(cmd.ErrOrStderr(), "  Warning: adding %q: %v\n", c.Name, err); wErr != nil {
+				return wErr
+			}
 			continue
 		}
 		imported++
@@ -95,13 +115,17 @@ func runFirstRunFlow(cmd *cobra.Command) error {
 		return fmt.Errorf("saving registry: %w", err)
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Imported %d server(s) into registry.\n", imported)
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Imported %d server(s) into registry.\n", imported); err != nil {
+		return err
+	}
 	return nil
 }
 
 // promptKeybindingProfile asks the user to choose a keybinding profile (S-002).
 func promptKeybindingProfile(cmd *cobra.Command) (keyconfig.Profile, error) {
-	fmt.Fprint(cmd.OutOrStdout(), "Navigation style? [A]rrows (recommended) / [V]im / [C]lassic: ")
+	if _, err := fmt.Fprint(cmd.OutOrStdout(), "Navigation style? [A]rrows (recommended) / [V]im / [C]lassic: "); err != nil {
+		return keyconfig.ProfileArrows, err
+	}
 
 	reader := bufio.NewReader(cmd.InOrStdin())
 	input, err := reader.ReadString('\n')

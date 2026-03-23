@@ -29,8 +29,8 @@ lint:
 	go vet ./...
 	staticcheck ./... 2>/dev/null || true
 
-e2e:
-	@echo "VHS tape E2E tests not yet configured"
+e2e: build
+	@PATH="$(PWD):$$PATH" bash e2e/run_vhs_tests.sh
 
 snapshot:
 	goreleaser release --snapshot --clean

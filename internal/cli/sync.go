@@ -69,9 +69,13 @@ func runSync(cmd *cobra.Command, args []string) error {
 			return fmt.Errorf("preflight check: %w", prefErr)
 		}
 		if len(conflicts) > 0 {
-			fmt.Fprintf(cmd.ErrOrStderr(), "Preflight conflicts (%d):\n", len(conflicts))
+			if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "Preflight conflicts (%d):\n", len(conflicts)); err != nil {
+				return err
+			}
 			for _, c := range conflicts {
-				fmt.Fprintf(cmd.ErrOrStderr(), "  %s: %s\n", c.Path, c.Message)
+				if _, err := fmt.Fprintf(cmd.ErrOrStderr(), "  %s: %s\n", c.Path, c.Message); err != nil {
+					return err
+				}
 			}
 			return fmt.Errorf("resolve conflicts before syncing (or use --force to skip)")
 		}
@@ -88,7 +92,9 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	if syncDryRun {
-		fmt.Fprintln(cmd.OutOrStdout(), "Dry run (no changes written):")
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Dry run (no changes written):"); err != nil {
+			return err
+		}
 	}
 
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
@@ -104,12 +110,16 @@ func runSync(cmd *cobra.Command, args []string) error {
 func runSyncAll(cmd *cobra.Command, svc *service.Service) error {
 	projects := svc.ListProjects()
 	if len(projects) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No projects registered.")
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "No projects registered."); err != nil {
+			return err
+		}
 		return nil
 	}
 
 	for _, p := range projects {
-		fmt.Fprintf(cmd.OutOrStdout(), "--- %s ---\n", p.Name)
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "--- %s ---\n", p.Name); err != nil {
+			return err
+		}
 
 		var results []service.SyncResult
 		var err error
@@ -119,7 +129,9 @@ func runSyncAll(cmd *cobra.Command, svc *service.Service) error {
 			results, err = svc.SyncProject(p.Name)
 		}
 		if err != nil {
-			fmt.Fprintf(cmd.ErrOrStderr(), "  error: %v\n", err)
+			if _, wErr := fmt.Fprintf(cmd.ErrOrStderr(), "  error: %v\n", err); wErr != nil {
+				return wErr
+			}
 			continue
 		}
 
@@ -175,7 +187,9 @@ func buildServiceReadOnly() (*service.Service, error) {
 
 	projStore, err := project.LoadDefault()
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "warning: loading projects: %v\n", err)
+		if _, wErr := fmt.Fprintf(os.Stderr, "warning: loading projects: %v\n", err); wErr != nil {
+			return nil, wErr
+		}
 		projStore = project.NewStore()
 	}
 

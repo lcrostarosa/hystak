@@ -57,10 +57,14 @@ func runBackup(cmd *cobra.Command, args []string) error {
 			configPath := dep.ConfigPath(p.Path)
 			path, err := mgr.Backup(p.Name, configPath)
 			if err != nil {
-				fmt.Fprintf(cmd.ErrOrStderr(), "  %s: error: %v\n", p.Name, err)
+				if _, wErr := fmt.Fprintf(cmd.ErrOrStderr(), "  %s: error: %v\n", p.Name, err); wErr != nil {
+					return wErr
+				}
 				continue
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "  %s: %s\n", p.Name, path)
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  %s: %s\n", p.Name, path); err != nil {
+				return err
+			}
 		}
 		return nil
 	}
@@ -76,7 +80,9 @@ func runBackup(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Backed up to %s\n", path)
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Backed up to %s\n", path); err != nil {
+		return err
+	}
 
 	// Prune old backups (S-070)
 	userCfg, err := config.LoadUserConfig()
@@ -85,10 +91,14 @@ func runBackup(cmd *cobra.Command, args []string) error {
 	}
 	pruned, err := mgr.Prune(userCfg.MaxBackups)
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "warning: pruning backups: %v\n", err)
+		if _, wErr := fmt.Fprintf(cmd.ErrOrStderr(), "warning: pruning backups: %v\n", err); wErr != nil {
+			return wErr
+		}
 	}
 	if pruned > 0 {
-		fmt.Fprintf(cmd.OutOrStdout(), "Pruned %d old backup(s)\n", pruned)
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Pruned %d old backup(s)\n", pruned); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -105,7 +115,9 @@ func runBackupList(cmd *cobra.Command, mgr *backup.Manager, args []string) error
 	}
 
 	if len(entries) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No backups found.")
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "No backups found."); err != nil {
+			return err
+		}
 		return nil
 	}
 

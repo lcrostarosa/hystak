@@ -87,7 +87,9 @@ func runRun(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "Launching %s in %s...\n", clientCmd, proj.Path)
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Launching %s in %s...\n", clientCmd, proj.Path); err != nil {
+			return err
+		}
 
 		launchArgs := extraArgs
 		err := launch.RunCommand(clientCmd, launchArgs, proj.Path)
@@ -101,8 +103,12 @@ func runRun(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		fmt.Fprintf(cmd.OutOrStdout(), "\nClaude exited (code %d). What next?\n", exitCode)
-		fmt.Fprintln(cmd.OutOrStdout(), "  [R]elaunch  [C]onfigure  [Q]uit")
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "\nClaude exited (code %d). What next?\n", exitCode); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "  [R]elaunch  [C]onfigure  [Q]uit"); err != nil {
+			return err
+		}
 
 		action := readPostExitChoice(cmd)
 
@@ -111,7 +117,9 @@ func runRun(cmd *cobra.Command, args []string) error {
 			runNoSync = false // re-sync on relaunch
 			continue
 		case "c":
-			fmt.Fprintln(cmd.OutOrStdout(), "  Configure mode not yet available (requires TUI).")
+			if _, err := fmt.Fprintln(cmd.OutOrStdout(), "  Configure mode not yet available (requires TUI)."); err != nil {
+				return err
+			}
 			continue
 		default:
 			return nil
@@ -125,15 +133,21 @@ func dryRun(cmd *cobra.Command, svc *service.Service, projectName, clientCmd, pr
 		return fmt.Errorf("sync failed: %w", err)
 	}
 
-	fmt.Fprintln(cmd.OutOrStdout(), "Sync plan:")
+	if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Sync plan:"); err != nil {
+		return err
+	}
 	if err := printSyncResults(cmd, results); err != nil {
 		return err
 	}
 
 	launchParts := []string{clientCmd}
 	launchParts = append(launchParts, extraArgs...)
-	fmt.Fprintf(cmd.OutOrStdout(), "\nWould launch: %s\n", strings.Join(launchParts, " "))
-	fmt.Fprintf(cmd.OutOrStdout(), "Working dir:  %s\n", projectPath)
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "\nWould launch: %s\n", strings.Join(launchParts, " ")); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Working dir:  %s\n", projectPath); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -149,7 +163,9 @@ func printSyncResults(cmd *cobra.Command, results []service.SyncResult) error {
 
 // readPostExitChoice reads from cmd.InOrStdin() for testability.
 func readPostExitChoice(cmd *cobra.Command) string {
-	fmt.Fprint(cmd.OutOrStdout(), "  Choice: ")
+	if _, err := fmt.Fprint(cmd.OutOrStdout(), "  Choice: "); err != nil {
+		return "q" // write error = quit
+	}
 
 	reader := bufio.NewReader(cmd.InOrStdin())
 	input, err := reader.ReadString('\n')

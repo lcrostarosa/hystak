@@ -58,12 +58,18 @@ func runRestore(cmd *cobra.Command, args []string) error {
 		selected = entries[restoreIndex]
 	} else {
 		// Interactive selection (S-068)
-		fmt.Fprintln(cmd.OutOrStdout(), "Available backups:")
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Available backups:"); err != nil {
+			return err
+		}
 		for i, e := range entries {
 			ts := e.Timestamp.Format("2006-01-02 15:04:05")
-			fmt.Fprintf(cmd.OutOrStdout(), "  [%d] %s  %s  %s\n", i, ts, e.Scope, e.Path)
+			if _, err := fmt.Fprintf(cmd.OutOrStdout(), "  [%d] %s  %s  %s\n", i, ts, e.Scope, e.Path); err != nil {
+				return err
+			}
 		}
-		fmt.Fprint(cmd.OutOrStdout(), "\nSelect backup index: ")
+		if _, err := fmt.Fprint(cmd.OutOrStdout(), "\nSelect backup index: "); err != nil {
+			return err
+		}
 
 		reader := bufio.NewReader(cmd.InOrStdin())
 		input, err := reader.ReadString('\n')
@@ -89,7 +95,9 @@ func runRestore(cmd *cobra.Command, args []string) error {
 
 	// Confirmation
 	ts := selected.Timestamp.Format("2006-01-02 15:04:05")
-	fmt.Fprintf(cmd.OutOrStdout(), "Restore %s (%s) to %s? [y/N]: ", ts, selected.Scope, targetPath)
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Restore %s (%s) to %s? [y/N]: ", ts, selected.Scope, targetPath); err != nil {
+		return err
+	}
 
 	reader := bufio.NewReader(cmd.InOrStdin())
 	input, err := reader.ReadString('\n')
@@ -98,14 +106,18 @@ func runRestore(cmd *cobra.Command, args []string) error {
 	}
 	choice := strings.TrimSpace(strings.ToLower(input))
 	if choice != "y" && choice != "yes" {
-		fmt.Fprintln(cmd.OutOrStdout(), "Aborted.")
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Aborted."); err != nil {
+			return err
+		}
 		return nil
 	}
 
 	if err := mgr.Restore(selected.Path, targetPath); err != nil {
 		return err
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Restored %s\n", targetPath)
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Restored %s\n", targetPath); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -135,7 +147,9 @@ func runUndo(cmd *cobra.Command, args []string) error {
 	}
 
 	ts := entry.Timestamp.Format("2006-01-02 15:04:05")
-	fmt.Fprintf(cmd.OutOrStdout(), "Restored %s from %s backup\n", targetPath, ts)
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Restored %s from %s backup\n", targetPath, ts); err != nil {
+		return err
+	}
 	return nil
 }
 

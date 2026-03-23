@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/key"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/hystak/hystak/internal/discovery"
 	"github.com/hystak/hystak/internal/service"
 )
 
@@ -37,12 +38,14 @@ var toolDefs = [toolCount]struct {
 type toolsMode int
 
 const (
-	toolsModeGrid     toolsMode = iota
-	toolsModePicker             // project picker before action
-	toolsModeDiff               // showing diff results
-	toolsModeDiscover           // showing discovery results
-	toolsModeWizard             // launch wizard
-	toolsModeImport             // import overlay
+	toolsModeGrid      toolsMode = iota
+	toolsModePicker              // project picker before action
+	toolsModeDiff                // showing diff results
+	toolsModeDiscover            // showing discovery results
+	toolsModeWizard              // launch wizard
+	toolsModeWizardHub           // hub/reconfiguration wizard (S-061)
+	toolsModeConflict            // conflict resolution overlay (S-047)
+	toolsModeImport              // import overlay
 )
 
 // toolsTab is the Tools tab — action grid with overlays.
@@ -67,7 +70,11 @@ type toolsTab struct {
 	discoverView discoveryModel
 
 	// Wizard
-	wizard wizardModel
+	wizard    wizardModel
+	wizardHub wizardHubModel
+
+	// Conflict overlay
+	conflictOverlay conflictModel
 
 	// Import
 	importOverlay importModel
@@ -89,6 +96,10 @@ func (t *toolsTab) HelpKeys() []HelpEntry {
 		return t.discoverView.helpKeys()
 	case toolsModeWizard:
 		return t.wizard.helpKeys()
+	case toolsModeWizardHub:
+		return t.wizardHub.helpKeys()
+	case toolsModeConflict:
+		return t.conflictOverlay.helpKeys()
 	case toolsModeImport:
 		return t.importOverlay.helpKeys()
 	default:
@@ -110,8 +121,12 @@ type toolsDiffDoneMsg struct {
 	err     error
 }
 type toolsDiscoverDoneMsg struct {
-	imported int
-	err      error
+	candidates []discovery.Candidate
+	imported   int
+	err        error
+}
+type toolsSyncConflictMsg struct {
+	conflicts []service.SyncConflict
 }
 type toolsLaunchDoneMsg struct{ err error }
 type toolsWizardDoneMsg struct{}
@@ -125,6 +140,11 @@ func (t *toolsTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case toolsProjectListMsg:
 		t.projects = msg.projects
 		t.projectCursor = 0
+		return t, nil
+
+	case toolsSyncConflictMsg:
+		t.conflictOverlay = newConflictModel(t.keys, msg.conflicts)
+		t.mode = toolsModeConflict
 		return t, nil
 
 	case toolsSyncDoneMsg:
@@ -152,8 +172,8 @@ func (t *toolsTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			t.err = msg.err.Error()
 			t.mode = toolsModeGrid
 		} else {
-			t.err = fmt.Sprintf("Discovery complete: %d new server(s) imported", msg.imported)
-			t.mode = toolsModeGrid
+			t.discoverView = newDiscoveryModel(msg.candidates, msg.imported)
+			t.mode = toolsModeDiscover
 		}
 		return t, nil
 
@@ -165,6 +185,14 @@ func (t *toolsTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return t, nil
 
 	case toolsWizardDoneMsg:
+		t.mode = toolsModeGrid
+		return t, nil
+
+	case conflictResolvedMsg:
+		t.mode = toolsModeGrid
+		return t, nil
+
+	case conflictCancelMsg:
 		t.mode = toolsModeGrid
 		return t, nil
 
@@ -204,6 +232,10 @@ func (t *toolsTab) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return t.handleDiscoverKey(msg)
 		case toolsModeWizard:
 			return t.handleWizardKey(msg)
+		case toolsModeWizardHub:
+			return t.handleWizardHubKey(msg)
+		case toolsModeConflict:
+			return t.handleConflictKey(msg)
 		case toolsModeImport:
 			return t.handleImportKey(msg)
 		default:
@@ -290,8 +322,16 @@ func (t *toolsTab) executeAction(projectName string) tea.Cmd {
 	switch action {
 	case toolSync:
 		return func() tea.Msg {
-			results, err := svc.SyncProject(projectName)
-			return toolsSyncDoneMsg{results: results, err: err}
+			// Preflight conflict detection (S-046)
+			conflicts, err := svc.PreflightCheck(projectName)
+			if err != nil {
+				return toolsSyncDoneMsg{err: err}
+			}
+			if len(conflicts) > 0 {
+				return toolsSyncConflictMsg{conflicts: conflicts}
+			}
+			results, syncErr := svc.SyncProject(projectName)
+			return toolsSyncDoneMsg{results: results, err: syncErr}
 		}
 	case toolDiff:
 		return func() tea.Msg {
@@ -304,18 +344,13 @@ func (t *toolsTab) executeAction(projectName string) tea.Cmd {
 			if !ok {
 				return toolsDiscoverDoneMsg{err: fmt.Errorf("project %q not found", projectName)}
 			}
-			imported, err := svc.AutoDiscover(proj.Path)
-			return toolsDiscoverDoneMsg{imported: len(imported), err: err}
+			candidates, err := svc.AutoDiscover(proj.Path)
+			return toolsDiscoverDoneMsg{candidates: candidates, imported: len(candidates), err: err}
 		}
 	case toolLaunch:
-		return func() tea.Msg {
-			// Sync before launch
-			if _, err := svc.SyncProject(projectName); err != nil {
-				return toolsLaunchDoneMsg{err: fmt.Errorf("sync failed: %w", err)}
-			}
-			// Actual launch requires exiting alt screen; direct user to CLI
-			return toolsLaunchDoneMsg{err: fmt.Errorf("launch requires exiting TUI — use 'hystak run %s' from CLI", projectName)}
-		}
+		t.wizardHub = newWizardHubModel(t.keys, svc, projectName, "default")
+		t.mode = toolsModeWizardHub
+		return nil
 	}
 	return nil
 }
@@ -345,11 +380,21 @@ func (t *toolsTab) handleDiscoverKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 // --- Wizard ---
 
 func (t *toolsTab) handleWizardKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
-	if msg.String() == "esc" {
-		t.mode = toolsModeGrid
-		return t, nil
-	}
-	return t, nil
+	var cmd tea.Cmd
+	t.wizard, cmd = t.wizard.update(msg)
+	return t, cmd
+}
+
+func (t *toolsTab) handleWizardHubKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	t.wizardHub, cmd = t.wizardHub.update(msg)
+	return t, cmd
+}
+
+func (t *toolsTab) handleConflictKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	var cmd tea.Cmd
+	t.conflictOverlay, cmd = t.conflictOverlay.update(msg)
+	return t, cmd
 }
 
 // --- Import overlay ---
@@ -368,6 +413,14 @@ func (t *toolsTab) View() string {
 		return t.viewPicker()
 	case toolsModeDiff:
 		return t.diffView.view(t.width, t.height)
+	case toolsModeDiscover:
+		return t.discoverView.view(t.width, t.height)
+	case toolsModeWizard:
+		return t.wizard.view(t.width, t.height)
+	case toolsModeWizardHub:
+		return t.wizardHub.view(t.width, t.height)
+	case toolsModeConflict:
+		return t.conflictOverlay.view(t.width, t.height)
 	case toolsModeImport:
 		return t.importOverlay.view(t.width, t.height)
 	}

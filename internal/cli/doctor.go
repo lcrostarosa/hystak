@@ -37,13 +37,27 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 
 	// Check registry counts
 	w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
-	fmt.Fprintln(cmd.OutOrStdout(), "Checking registry...")
-	fmt.Fprintf(w, "  %d MCP server(s)\n", reg.Servers.Len())
-	fmt.Fprintf(w, "  %d skill(s)\n", reg.Skills.Len())
-	fmt.Fprintf(w, "  %d hook(s)\n", reg.Hooks.Len())
-	fmt.Fprintf(w, "  %d permission(s)\n", reg.Permissions.Len())
-	fmt.Fprintf(w, "  %d template(s)\n", reg.Templates.Len())
-	fmt.Fprintf(w, "  %d prompt(s)\n", reg.Prompts.Len())
+	if _, err := fmt.Fprintln(cmd.OutOrStdout(), "Checking registry..."); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  %d MCP server(s)\n", reg.Servers.Len()); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  %d skill(s)\n", reg.Skills.Len()); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  %d hook(s)\n", reg.Hooks.Len()); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  %d permission(s)\n", reg.Permissions.Len()); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  %d template(s)\n", reg.Templates.Len()); err != nil {
+		return err
+	}
+	if _, err := fmt.Fprintf(w, "  %d prompt(s)\n", reg.Prompts.Len()); err != nil {
+		return err
+	}
 	if err := w.Flush(); err != nil {
 		return err
 	}
@@ -61,10 +75,14 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 	}
 
 	// Check profiles for dangling references
-	fmt.Fprintln(cmd.OutOrStdout(), "\nChecking profiles...")
+	if _, err := fmt.Fprintln(cmd.OutOrStdout(), "\nChecking profiles..."); err != nil {
+		return err
+	}
 	profNames, err := profMgr.List()
 	if err != nil {
-		fmt.Fprintf(cmd.ErrOrStderr(), "  warning: listing profiles: %v\n", err)
+		if _, wErr := fmt.Fprintf(cmd.ErrOrStderr(), "  warning: listing profiles: %v\n", err); wErr != nil {
+			return wErr
+		}
 	} else {
 		for _, profName := range profNames {
 			prof, err := profMgr.Load(profName)
@@ -81,14 +99,18 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 
 	// Print issues
 	if len(issues) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "\nNo issues found.")
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "\nNo issues found."); err != nil {
+			return err
+		}
 		return nil
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "\n%d issue(s) found:\n", len(issues))
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "\n%d issue(s) found:\n", len(issues)); err != nil {
+		return err
+	}
 	errors, warnings := 0, 0
 	for _, issue := range issues {
-		prefix := "  "
+		var prefix string
 		if issue.severity == "error" {
 			prefix = "  ERROR: "
 			errors++
@@ -96,9 +118,13 @@ func runDoctor(cmd *cobra.Command, args []string) error {
 			prefix = "  WARNING: "
 			warnings++
 		}
-		fmt.Fprintln(cmd.OutOrStdout(), prefix+issue.message)
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), prefix+issue.message); err != nil {
+			return err
+		}
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "\n%d error(s), %d warning(s)\n", errors, warnings)
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "\n%d error(s), %d warning(s)\n", errors, warnings); err != nil {
+		return err
+	}
 
 	if errors > 0 {
 		return fmt.Errorf("%d error(s) found", errors)

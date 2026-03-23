@@ -50,7 +50,9 @@ func runDiffProject(cmd *cobra.Command, svc *service.Service, name string) error
 	}
 
 	if allSynced(results) {
-		fmt.Fprintln(cmd.OutOrStdout(), "No drift detected.")
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "No drift detected."); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -60,7 +62,9 @@ func runDiffProject(cmd *cobra.Command, svc *service.Service, name string) error
 func runDiffAll(cmd *cobra.Command, svc *service.Service) error {
 	projects := svc.ListProjects()
 	if len(projects) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No projects registered.")
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "No projects registered."); err != nil {
+			return err
+		}
 		return nil
 	}
 

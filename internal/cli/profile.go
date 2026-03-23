@@ -64,7 +64,9 @@ func runProfileList(cmd *cobra.Command, args []string) error {
 	}
 
 	if len(profiles) == 0 {
-		fmt.Fprintln(cmd.OutOrStdout(), "No profiles found.")
+		if _, err := fmt.Fprintln(cmd.OutOrStdout(), "No profiles found."); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -107,7 +109,9 @@ func runProfileExport(cmd *cobra.Command, args []string) error {
 		if err := os.WriteFile(profileExportOutput, data, 0o644); err != nil {
 			return err
 		}
-		fmt.Fprintf(cmd.OutOrStdout(), "Exported to %s\n", profileExportOutput)
+		if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Exported to %s\n", profileExportOutput); err != nil {
+			return err
+		}
 		return nil
 	}
 
@@ -139,7 +143,9 @@ func runProfileImport(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	fmt.Fprintf(cmd.OutOrStdout(), "Imported profile %q\n", prof.Name)
+	if _, err := fmt.Fprintf(cmd.OutOrStdout(), "Imported profile %q\n", prof.Name); err != nil {
+		return err
+	}
 	return nil
 }
 

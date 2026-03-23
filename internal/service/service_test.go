@@ -184,6 +184,8 @@ func TestService_SyncProject_NotFound(t *testing.T) {
 
 func TestService_SyncProject_MissingServer(t *testing.T) {
 	tmp := t.TempDir()
+	config.OverrideDir(tmp)
+	t.Cleanup(func() { config.OverrideDir("") })
 	projDir := filepath.Join(tmp, "proj")
 	mkdirAll(t, projDir)
 
@@ -220,6 +222,8 @@ func TestService_SyncProject_MissingServer(t *testing.T) {
 
 func TestService_SyncProject_NoActiveProfile(t *testing.T) {
 	tmp := t.TempDir()
+	config.OverrideDir(tmp)
+	t.Cleanup(func() { config.OverrideDir("") })
 	reg := registry.New()
 	projStore := project.NewStore()
 	if err := projStore.Add(model.Project{
@@ -241,6 +245,8 @@ func TestService_SyncProject_NoActiveProfile(t *testing.T) {
 
 func TestService_SyncProject_WithOverrides(t *testing.T) {
 	tmp := t.TempDir()
+	config.OverrideDir(tmp)
+	t.Cleanup(func() { config.OverrideDir("") })
 	projDir := filepath.Join(tmp, "proj")
 	mkdirAll(t, projDir)
 
